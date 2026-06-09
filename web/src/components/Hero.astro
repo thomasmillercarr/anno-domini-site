@@ -1,0 +1,30 @@
+---
+import { site } from '../data/site';
+const { hero } = site;
+---
+
+<header class="hero" data-screen-label="Hero">
+  <img class="hero__slot" src={hero.image} alt={hero.imageAlt} fetchpriority="high" />
+  <div class="hero__veil"></div>
+  <div class="hero__grid wrap inner">
+    <div>
+      <p class="label hero__sub">{hero.sub}</p>
+      <h1 class="display-xl hero__h1">{hero.headlineLead}<em>{hero.headlineEm}</em></h1>
+      <div class="hero__cta">
+        <a class="btn btn--onimg" href={hero.ctaHref}><span class="mk">&rarr;</span> {hero.cta}</a>
+      </div>
+    </div>
+    <div class="statcard frost">
+      <p class="statcard__cap">{hero.stat.cap}</p>
+      <p class="statcard__val"><span class="statcard__num" data-countup={hero.stat.value}>{hero.stat.value}</span><span class="statcard__unit">{hero.stat.unit}</span></p>
+      <p class="statcard__note">{hero.stat.note}</p>
+      <div class="statcard__chart">
+        <svg viewBox="0 0 300 46" preserveAspectRatio="none" fill="none">
+          <polyline class="statcard__line" points="0,40 38,34 76,36 114,26 152,28 190,18 228,20 266,9 300,6"
+            stroke="#F6F2EA" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+          <circle class="statcard__dot" cx="300" cy="6" r="2.6" fill="#F6F2EA"></circle>
+        </svg>
+      </div>
+    </div>
+  </div>
+</header>

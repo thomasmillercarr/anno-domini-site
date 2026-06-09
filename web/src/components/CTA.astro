@@ -1,0 +1,13 @@
+---
+import { site } from '../data/site';
+const mailto = `mailto:${site.email}`;
+const { cta } = site;
+---
+
+<section class="cta band wrap" id="cta" data-screen-label="CTA">
+  <div class="cta__inner inner">
+    <h2 class="caps cta__h">{cta.heading}</h2>
+    <p class="lede cta__line">{cta.line}</p>
+    <a class="btn btn--warm" href={mailto}><span class="mk">&rarr;</span> {cta.button}</a>
+  </div>
+</section>

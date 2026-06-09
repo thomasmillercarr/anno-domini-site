@@ -1,0 +1,22 @@
+---
+import { site } from '../data/site';
+const mailto = `mailto:${site.email}`;
+const { footer } = site;
+---
+
+<footer data-screen-label="Footer">
+  <div class="foot-letter band wrap">
+    <div class="foot-letter__row inner">
+      <div class="foot-letter__lead">
+        <p class="display">{footer.lead}</p>
+      </div>
+      <a class="foot-link" href={mailto}>{site.email}</a>
+    </div>
+    <div class="inner"><hr class="hair" /></div>
+    <p class="foot-letter__copy inner">{footer.copy}</p>
+  </div>
+  <div class="os-bar">
+    <span class="os-bar__mark"><img class="os-bar__mark-img" src={site.logo} alt={site.logoAlt} /></span>
+    {footer.barCells.map((cell) => <span class="os-bar__cell">{cell}</span>)}
+  </div>
+</footer>

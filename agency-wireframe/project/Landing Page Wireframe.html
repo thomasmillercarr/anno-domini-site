@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Fractional AI Partner — Landing Wireframe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap" rel="stylesheet" />
+<style>
+  /* ============================================================
+     BRAND TOKENS — Fractional AI Partner
+     Bone / linen / sage / timber / shadow-charcoal.
+     Material truth: matte, desaturated, physical-world.
+     ============================================================ */
+  :root {
+    /* Ground & surfaces */
+    --bone:        #F1ECE3;   /* warm off-white ground — never pure white */
+    --linen:       #F6F1E8;   /* secondary surface, fractionally warmer/lighter */
+    --linen-deep:  #ECE5D9;   /* subtle alt band */
+
+    /* Accent — the one chromatic note */
+    --sage:        #C8CCBA;
+    --sage-bleed:  rgba(200, 204, 186, 0.34); /* whisper-fill on hover/active */
+    --sage-veil:   rgba(200, 204, 186, 0.18);
+
+    /* Warm natural */
+    --timber:      #B69B7D;   /* muted amber-tan, low saturation */
+    --timber-deep: #8C7257;
+
+    /* Ink */
+    --ink:         #211E18;   /* near black, warm undertone */
+    --ink-soft:    #46413A;
+    --ink-mute:    #79736A;   /* mid grey, warm cast — secondary text */
+    --charcoal:    #1A1814;
+
+    /* Hairlines */
+    --hair:        rgba(33, 30, 24, 0.13);
+    --hair-soft:   rgba(33, 30, 24, 0.08);
+    --hair-w:      0.5px;
+
+    /* Frosted glass */
+    --frost:       rgba(246, 241, 232, 0.50);
+    --frost-edge:  rgba(255, 252, 246, 0.55);
+
+    /* Type */
+    --font: 'Archivo', system-ui, sans-serif;
+
+    /* Rhythm */
+    --pad-x: clamp(28px, 6vw, 132px);
+    --band:  clamp(96px, 14vh, 176px);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bone);
+    color: var(--ink);
+    font-variation-settings: 'wdth' 100, 'wght' 400;
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  /* ---- Type roles ---------------------------------------------------- */
+  .display {
+    font-variation-settings: 'wdth' 125, 'wght' 500;
+    line-height: 0.96;
+    letter-spacing: -0.005em;
+    text-wrap: balance;
+  }
+  .display-xl {
+    font-variation-settings: 'wdth' 125, 'wght' 500;
+    font-size: clamp(48px, 9vw, 132px);
+    line-height: 0.92;
+    letter-spacing: 0.005em;
+  }
+  .label {
+    font-variation-settings: 'wdth' 112, 'wght' 500;
+    font-size: 12px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+  .body {
+    font-size: clamp(16px, 1.15vw, 18px);
+    line-height: 1.72;
+    color: var(--ink-soft);
+    max-width: 46ch;
+  }
+  .body-mute { color: var(--ink-mute); }
+
+  /* ---- Frosted pill button ------------------------------------------ */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.7em;
+    padding: 13px 24px;
+    border-radius: 999px;
+    border: var(--hair-w) solid var(--hair);
+    background: transparent;
+    -webkit-backdrop-filter: blur(7px) saturate(105%);
+    backdrop-filter: blur(7px) saturate(105%);
+    font-family: var(--font);
+    font-variation-settings: 'wdth' 108, 'wght' 500;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    color: var(--ink);
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 320ms cubic-bezier(.22,1,.36,1), border-color 320ms ease, color 320ms ease;
+  }
+  .btn .mk { font-size: 12px; opacity: 0.6; transition: opacity 320ms ease; }
+  .btn:hover {
+    background: var(--sage-bleed);
+    border-color: rgba(200, 204, 186, 0.7);
+  }
+  .btn:hover .mk { opacity: 1; }
+
+  /* signature translucent sage button */
+  .btn--signature {
+    background: var(--sage-veil);
+    border-color: rgba(200, 204, 186, 0.5);
+  }
+  .btn--signature:hover { background: var(--sage-bleed); }
+
+  /* on-image button reverses to light ink */
+  .btn--ondark {
+    color: #F4EFE6;
+    border-color: rgba(244, 239, 230, 0.4);
+  }
+  .btn--ondark:hover {
+    background: rgba(244, 239, 230, 0.14);
+    border-color: rgba(244, 239, 230, 0.7);
+  }
+
+  /* ---- Frosted panel ------------------------------------------------- */
+  .frost {
+    background: var(--frost);
+    -webkit-backdrop-filter: blur(16px) saturate(115%);
+    backdrop-filter: blur(16px) saturate(115%);
+    border: var(--hair-w) solid var(--frost-edge);
+  }
+
+  .hair { border: 0; border-top: var(--hair-w) solid var(--hair); }
+
+  /* ---- Layout helpers ----------------------------------------------- */
+  section { padding-left: var(--pad-x); padding-right: var(--pad-x); }
+  .band { padding-top: var(--band); padding-bottom: var(--band); }
+
+  /* placeholder note flag */
+  .ph {
+    font-variation-settings: 'wdth' 100, 'wght' 500;
+    font-size: 10.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  /* ============================================================
+     SECTION 1 — NAVIGATION
+     ============================================================ */
+  .nav {
+    position: sticky; top: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: space-between;
+    height: 78px;
+    padding-left: var(--pad-x); padding-right: var(--pad-x);
+    background: transparent;
+  }
+  .nav.scrolled {
+    background: rgba(241, 236, 227, 0.72);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+  .brand { display: flex; align-items: center; gap: 13px; }
+  /* geometric mark — three timber slats */
+  .mark { display: flex; flex-direction: column; gap: 3px; }
+  .mark span { display: block; width: 22px; height: 3px; background: var(--charcoal); border-radius: 1px; }
+  .mark span:nth-child(2) { width: 16px; }
+  .mark span:nth-child(3) { width: 19px; }
+  .brand .word {
+    font-variation-settings: 'wdth' 120, 'wght' 500;
+    font-size: 20px;
+    letter-spacing: 0.02em;
+    color: var(--ink);
+  }
+  .brand .word b { font-variation-settings: 'wdth' 120, 'wght' 500; color: var(--ink-mute); font-weight: inherit; }
+
+  /* ============================================================
+     SECTION 2 — HERO
+     ============================================================ */
+  .hero {
+    position: relative;
+    min-height: 100vh;
+    padding: 0;
+    display: flex;
+    align-items: flex-end;
+    overflow: hidden;
+  }
+  /* full-bleed image placeholder: warm timber + hard slat light */
+  .hero__img {
+    position: absolute; inset: 0;
+    background:
+      repeating-linear-gradient(101deg,
+        rgba(255, 250, 240, 0.10) 0px,
+        rgba(255, 250, 240, 0.10) 96px,
+        rgba(44, 33, 22, 0.16) 96px,
+        rgba(44, 33, 22, 0.16) 168px),
+      linear-gradient(158deg, #c7b298 0%, var(--timber) 44%, var(--timber-deep) 100%);
+  }
+  /* very subtle warm-tinted overlay for legibility — not dark */
+  .hero__veil {
+    position: absolute; inset: 0;
+    background: linear-gradient(to top, rgba(28, 22, 15, 0.42) 0%, rgba(28, 22, 15, 0.10) 46%, rgba(28, 22, 15, 0.0) 78%);
+  }
+  .hero__imglabel {
+    position: absolute; top: 100px; right: var(--pad-x);
+    color: rgba(244, 239, 230, 0.72);
+    font-variation-settings: 'wdth' 100, 'wght' 500;
+    font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase;
+    padding: 9px 15px;
+    border: var(--hair-w) solid rgba(244, 239, 230, 0.32);
+    border-radius: 999px;
+    -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  }
+  .hero__content {
+    position: relative;
+    padding: 0 var(--pad-x) clamp(56px, 9vh, 104px);
+    max-width: 1180px;
+  }
+  .hero__sub {
+    color: rgba(244, 239, 230, 0.82);
+    margin-bottom: 22px;
+  }
+  .hero__h1 {
+    color: #F6F1E8;
+    font-size: clamp(40px, 6.2vw, 92px);
+    line-height: 0.96;
+    max-width: 15ch;
+    margin-bottom: 38px;
+  }
+  .hero__h1 .br { color: rgba(246, 241, 232, 0.62); }
+
+  /* ============================================================
+     SECTION 3 — PROBLEM
+     ============================================================ */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: minmax(160px, 0.34fr) 1fr;
+    gap: clamp(32px, 6vw, 96px);
+  }
+  .problem__list { display: flex; flex-direction: column; }
+  .problem__item {
+    font-variation-settings: 'wdth' 108, 'wght' 400;
+    font-size: clamp(24px, 2.9vw, 40px);
+    line-height: 1.22;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    padding: clamp(28px, 4vh, 48px) 0;
+    max-width: 22ch;
+    text-wrap: balance;
+  }
+  .problem__item:first-child { padding-top: 4px; }
+  .problem__item:last-child { padding-bottom: 0; }
+  .problem__item + .problem__item { border-top: var(--hair-w) solid var(--hair); }
+
+  /* ============================================================
+     SECTION 4 — SOLUTION
+     ============================================================ */
+  .solution { background: var(--linen); }
+  .solution__grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: clamp(40px, 6vw, 110px);
+    align-items: center;
+  }
+  .solution__display {
+    font-size: clamp(34px, 4.6vw, 68px);
+    margin: 22px 0 34px;
+    max-width: 14ch;
+  }
+  .solution__right { position: relative; display: flex; justify-content: flex-end; }
+  /* faint texture patch so the frosted card reads as permeable */
+  .solution__texture {
+    position: absolute; inset: -8% -6% -8% 14%;
+    border-radius: 4px;
+    background:
+      repeating-linear-gradient(108deg,
+        rgba(182, 155, 125, 0.0) 0px,
+        rgba(182, 155, 125, 0.0) 40px,
+        rgba(140, 114, 87, 0.16) 40px,
+        rgba(140, 114, 87, 0.16) 74px),
+      linear-gradient(150deg, rgba(200,204,186,0.22), rgba(182,155,125,0.16));
+  }
+  .os-card {
+    position: relative;
+    width: min(420px, 100%);
+    border-radius: 5px;
+    padding: 30px 32px 14px;
+  }
+  .os-card__cap { margin-bottom: 22px; }
+  .os-row {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 16px 0;
+    font-variation-settings: 'wdth' 108, 'wght' 500;
+    font-size: 15px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .os-row + .os-row { border-top: var(--hair-w) solid var(--hair); }
+  .os-row .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--sage); opacity: 0.85; }
+
+  /* ============================================================
+     SECTION 5 — HOW IT WORKS
+     ============================================================ */
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    margin-top: clamp(48px, 7vh, 86px);
+  }
+  .step {
+    padding: 4px clamp(20px, 2.4vw, 40px) 0;
+  }
+  .step + .step { border-left: var(--hair-w) solid var(--hair); }
+  .step:first-child { padding-left: 0; }
+  .step__num {
+    font-variation-settings: 'wdth' 100, 'wght' 500;
+    font-size: 12px; letter-spacing: 0.22em; color: var(--ink-mute);
+    margin-bottom: 18px;
+  }
+  .step__label {
+    font-variation-settings: 'wdth' 122, 'wght' 500;
+    font-size: clamp(26px, 2.6vw, 38px);
+    letter-spacing: 0.01em;
+    margin-bottom: 16px;
+  }
+  .step__body { font-size: 15.5px; line-height: 1.66; color: var(--ink-mute); max-width: 24ch; }
+
+  /* ============================================================
+     SECTION 6 — THE LADDER
+     ============================================================ */
+  .ladder { background: var(--linen); }
+  .rung {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.32fr) 1fr;
+    gap: clamp(28px, 5vw, 80px);
+    align-items: baseline;
+    padding: clamp(30px, 4.4vh, 52px) clamp(20px, 3vw, 44px);
+    border-top: var(--hair-w) solid var(--hair);
+  }
+  .rung:last-child { border-bottom: var(--hair-w) solid var(--hair); }
+  .rung--active { background: var(--sage-veil); }
+  .rung__label {
+    font-variation-settings: 'wdth' 122, 'wght' 500;
+    font-size: clamp(26px, 2.7vw, 40px);
+    letter-spacing: 0.005em;
+  }
+  .rung__desc { font-size: clamp(16px, 1.2vw, 18px); line-height: 1.66; color: var(--ink-soft); max-width: 50ch; }
+
+  /* ============================================================
+     SECTION 7 — PROOF
+     ============================================================ */
+  .proof__grid {
+    display: grid;
+    grid-template-columns: 1.05fr 0.95fr;
+    gap: clamp(40px, 6vw, 100px);
+    align-items: start;
+  }
+  .proof__statement {
+    font-size: clamp(30px, 3.8vw, 56px);
+    max-width: 13ch;
+  }
+  .proof__bars {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    margin-top: clamp(56px, 8vh, 96px);
+  }
+  .proof__bar {
+    padding: 0 clamp(18px, 2vw, 32px);
+    font-variation-settings: 'wdth' 106, 'wght' 500;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    color: var(--ink-soft);
+    line-height: 1.5;
+  }
+  .proof__bar:first-child { padding-left: 0; }
+  .proof__bar + .proof__bar { border-left: var(--hair-w) solid var(--hair); }
+
+  /* ============================================================
+     SECTION 8 — CTA
+     ============================================================ */
+  .cta { background: var(--linen-deep); }
+  .cta__inner { max-width: 1100px; }
+  .cta__h {
+    font-size: clamp(40px, 6.4vw, 100px);
+    margin-bottom: 28px;
+    max-width: 13ch;
+  }
+  .cta__line { margin-bottom: 40px; }
+
+  /* ============================================================
+     SECTION 9 — FOOTER
+     ============================================================ */
+  .footer { padding-top: clamp(48px, 7vh, 80px); padding-bottom: 40px; }
+  .footer__row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 24px; flex-wrap: wrap;
+    padding-bottom: 28px;
+  }
+  .footer__link {
+    color: var(--ink); text-decoration: none;
+    font-variation-settings: 'wdth' 108, 'wght' 500;
+    font-size: 15px; letter-spacing: 0.02em;
+    transition: opacity 200ms ease;
+  }
+  .footer__link:hover { opacity: 0.6; }
+  .footer__copy {
+    margin-top: 24px;
+    font-size: 12px; letter-spacing: 0.04em; color: var(--ink-mute);
+  }
+
+  /* ============================================================
+     RESPONSIVE
+     ============================================================ */
+  @media (max-width: 860px) {
+    .grid-2, .solution__grid, .proof__grid { grid-template-columns: 1fr; }
+    .steps { grid-template-columns: 1fr 1fr; }
+    .step + .step { border-left: 0; }
+    .step:nth-child(3), .step:nth-child(4) { border-top: var(--hair-w) solid var(--hair); padding-top: 32px; }
+    .step:nth-child(3) { border-left: 0; }
+    .step:nth-child(2) { border-left: var(--hair-w) solid var(--hair); }
+    .solution__right { justify-content: flex-start; }
+    .rung { grid-template-columns: 1fr; gap: 14px; }
+    .proof__bars { grid-template-columns: 1fr; gap: 0; }
+    .proof__bar { padding: 18px 0; }
+    .proof__bar + .proof__bar { border-left: 0; border-top: var(--hair-w) solid var(--hair); }
+    .nav .btn { display: none; }
+  }
+  @media (max-width: 540px) {
+    .steps { grid-template-columns: 1fr; }
+    .step + .step { border-top: var(--hair-w) solid var(--hair); border-left: 0; padding-top: 30px; }
+    .step:nth-child(2) { border-left: 0; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- ============ SECTION 1 — NAVIGATION ============ -->
+  <nav class="nav" id="nav" data-screen-label="Nav">
+    <div class="brand">
+      <div class="mark" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="word">[BRAND]<b>™</b></div>
+    </div>
+    <a class="btn" href="#cta"><span class="mk">←</span> Start a conversation</a>
+  </nav>
+
+  <!-- ============ SECTION 2 — HERO ============ -->
+  <header class="hero" data-screen-label="Hero">
+    <div class="hero__img" aria-hidden="true"></div>
+    <div class="hero__veil" aria-hidden="true"></div>
+    <div class="hero__imglabel">[ &nbsp;High quality image — to be assigned&nbsp; ]</div>
+
+    <div class="hero__content">
+      <p class="label hero__sub">Fractional AI Partner — UK</p>
+      <h1 class="display-xl hero__h1">[BRAND] <span class="br">— AI systems for businesses that need to work.</span></h1>
+      <a class="btn btn--ondark" href="#how"><span class="mk">←</span> See how it works</a>
+    </div>
+  </header>
+
+  <!-- ============ SECTION 3 — PROBLEM ============ -->
+  <section class="band" data-screen-label="Problem">
+    <div class="grid-2">
+      <div><p class="label">The problem</p></div>
+      <div class="problem__list">
+        <p class="problem__item">Your consultants are spending four hours screening CVs that a system could sort in eight minutes.</p>
+        <p class="problem__item">Clients send “any updates?” because your process doesn’t update them automatically.</p>
+        <p class="problem__item">Your pipeline lives in a Friday afternoon spreadsheet nobody finishes before they leave.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SECTION 4 — SOLUTION ============ -->
+  <section class="solution band" data-screen-label="Solution">
+    <div class="solution__grid">
+      <div class="solution__left">
+        <p class="label">What we build</p>
+        <h2 class="display solution__display">An AI operating system installed inside your business. Built for how you work.</h2>
+        <p class="body">Not a subscription tool. Not a generic automation platform. A custom system built around your desk, your clients, and the way your team operates — then handed over to you.</p>
+      </div>
+      <div class="solution__right">
+        <div class="solution__texture" aria-hidden="true"></div>
+        <div class="os-card frost">
+          <p class="label os-card__cap">The operating system</p>
+          <div class="os-row"><span>CV Screening</span><span class="dot"></span></div>
+          <div class="os-row"><span>Client Updates</span><span class="dot"></span></div>
+          <div class="os-row"><span>JD Generator</span><span class="dot"></span></div>
+          <div class="os-row"><span>CRM Revival</span><span class="dot"></span></div>
+          <div class="os-row"><span>Pipeline View</span><span class="dot"></span></div>
+          <div class="os-row"><span>Query Handling</span><span class="dot"></span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SECTION 5 — HOW IT WORKS ============ -->
+  <section class="band" id="how" data-screen-label="How it works">
+    <div class="grid-2">
+      <div><p class="label">How it works</p></div>
+      <div><p class="body" style="max-width:38ch;">A repeatable cycle. Each delivery is small, owned, and surfaces the next one.</p></div>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <p class="step__num">01</p>
+        <h3 class="step__label">Brief</h3>
+        <p class="step__body">We map your workflows in one session. One clear problem. One measurable output.</p>
+      </div>
+      <div class="step">
+        <p class="step__num">02</p>
+        <h3 class="step__label">Build</h3>
+        <p class="step__body">We ship a working solution in 3–7 days. Modular — every build reuses components.</p>
+      </div>
+      <div class="step">
+        <p class="step__num">03</p>
+        <h3 class="step__label">Deliver</h3>
+        <p class="step__body">You receive a working tool, a walkthrough, and documentation you own completely.</p>
+      </div>
+      <div class="step">
+        <p class="step__num">04</p>
+        <h3 class="step__label">Repeat</h3>
+        <p class="step__body">Every delivery surfaces the next brief. The system grows. The retainer justifies itself.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SECTION 6 — THE LADDER ============ -->
+  <section class="ladder band" data-screen-label="The ladder">
+    <p class="label" style="margin-bottom: clamp(24px,4vh,44px);">How we work together</p>
+    <div class="rungs">
+      <div class="rung rung--active">
+        <div class="rung__label">Session</div>
+        <p class="rung__desc">One-on-one. We set up your AI operating system together. You leave with a working system and a clear picture of where automation earns its place.</p>
+      </div>
+      <div class="rung">
+        <div class="rung__label">Audit</div>
+        <p class="rung__desc">We map your workflows properly. You receive a written diagnosis of your top automation opportunities and one working tool built from it.</p>
+      </div>
+      <div class="rung">
+        <div class="rung__label">Project</div>
+        <p class="rung__desc">One focused scope. A single workflow automated end to end. Numbers prove the return.</p>
+      </div>
+      <div class="rung">
+        <div class="rung__label">Retainer</div>
+        <p class="rung__desc">An ongoing operating system — built, maintained, and expanded as your business grows.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SECTION 7 — PROOF ============ -->
+  <section class="band" data-screen-label="Proof">
+    <div class="proof__grid">
+      <div>
+        <p class="label" style="margin-bottom:24px;">Proof</p>
+        <h2 class="display proof__statement">Already running inside a real business.</h2>
+      </div>
+      <div>
+        <p class="body" style="max-width:48ch;">Every tool in this system was built and deployed inside a live operation — before a single external client was taken on. CV screening. Lead generation. Client communication. Pipeline reporting. Built, tested, and running.</p>
+      </div>
+    </div>
+    <div class="proof__bars">
+      <div class="proof__bar">Email lead generation — running daily</div>
+      <div class="proof__bar">Newsletter infrastructure — rebuilt from scratch</div>
+      <div class="proof__bar">Pipeline reporting — deployed and in use</div>
+    </div>
+  </section>
+
+  <!-- ============ SECTION 8 — CTA ============ -->
+  <section class="cta band" id="cta" data-screen-label="CTA">
+    <div class="cta__inner">
+      <h2 class="display cta__h">Ready to get your hours back?</h2>
+      <p class="body cta__line">One session. No commitment. See what’s possible.</p>
+      <a class="btn btn--signature" href="#"><span class="mk">←</span> Book a session</a>
+    </div>
+  </section>
+
+  <!-- ============ SECTION 9 — FOOTER ============ -->
+  <footer class="footer" data-screen-label="Footer">
+    <div class="footer__row">
+      <div class="brand">
+        <div class="mark" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div class="word">[BRAND]<b>™</b></div>
+      </div>
+      <a class="footer__link" href="#">hello@[domain]</a>
+    </div>
+    <hr class="hair" />
+    <p class="footer__copy">© 2026 [Brand Name]. A fractional AI partner. United Kingdom.</p>
+  </footer>
+
+  <script>
+    // Nav gains a frosted ground once the hero scrolls past
+    var nav = document.getElementById('nav');
+    var onScroll = function () {
+      if (window.scrollY > window.innerHeight * 0.7) nav.classList.add('scrolled');
+      else nav.classList.remove('scrolled');
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+  </script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+---
+import { site } from '../data/site';
+const { proof } = site;
+---
+
+<section class="band wrap" data-screen-label="Proof">
+  <div class="proof__grid inner">
+    <div>
+      <p class="label proof__label">{proof.label}</p>
+      <h2 class="display proof__statement">{proof.statement}</h2>
+    </div>
+    <div>
+      <p class="body">{proof.body}</p>
+    </div>
+  </div>
+  <div class="inner">
+    <div class="proof__imgs">
+      {proof.images.map((img) => <img src={img.src} alt={img.alt} loading="lazy" />)}
+    </div>
+    <div class="proof__bars">
+      {proof.bars.map((bar) => (
+        <div class="proof__bar"><b>{bar.title}</b><br>{bar.note}</div>
+      ))}
+    </div>
+  </div>
+</section>

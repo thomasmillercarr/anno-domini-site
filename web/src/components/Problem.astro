@@ -1,0 +1,15 @@
+---
+import { site } from '../data/site';
+const { problem } = site;
+---
+
+<section class="band wrap" id="approach" data-screen-label="Problem">
+  <div class="cols inner">
+    <div><p class="label">{problem.label}</p></div>
+    <div class="problem__list">
+      {problem.items.map((item) => (
+        <p class="problem__item">{item.pre}{item.b && <b>{item.b}</b>}{item.post}</p>
+      ))}
+    </div>
+  </div>
+</section>

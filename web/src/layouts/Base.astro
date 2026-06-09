@@ -1,0 +1,61 @@
+---
+import { site } from '../data/site';
+import '../styles/os-site.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const { title = site.brandFull, description = site.description } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const ogImage = new URL(site.hero.image, Astro.site).href;
+---
+
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+
+    <!-- Open Graph / social -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Fonts: self-hosted Archivo (see @font-face in os-site.css). Preload the
+         critical latin upright so first paint has the variable font ready. -->
+    <link rel="preload" href="/fonts/archivo-latin-normal.woff2" as="font" type="font/woff2" crossorigin />
+
+    <!-- No-FOUC theme init: must run before paint, so it stays inline & un-bundled. -->
+    <script is:inline>
+      (function () {
+        try {
+          var saved = localStorage.getItem('os-theme');
+          if (saved === 'dark' || saved === 'light') {
+            document.documentElement.setAttribute('data-theme', saved);
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <slot />
+
+    <!-- Bundled, deferred client behaviour. -->
+    <script>
+      import '../scripts/theme';
+      import '../scripts/scroll';
+      import '../scripts/statcard';
+      import '../scripts/pointer';
+    </script>
+  </body>
+</html>

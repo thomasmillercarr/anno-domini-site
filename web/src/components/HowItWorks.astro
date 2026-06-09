@@ -1,0 +1,20 @@
+---
+import { site } from '../data/site';
+const { howItWorks } = site;
+---
+
+<section class="band wrap" id="insights" data-screen-label="How it works">
+  <div class="cols inner">
+    <div><p class="label">{howItWorks.label}</p></div>
+    <div><p class="lede">{howItWorks.lede}</p></div>
+  </div>
+  <div class="steps inner">
+    {howItWorks.steps.map((step) => (
+      <div class="step">
+        <p class="step__num">{step.num}</p>
+        <h3 class="step__label">{step.label}</h3>
+        <p class="step__body">{step.body}</p>
+      </div>
+    ))}
+  </div>
+</section>

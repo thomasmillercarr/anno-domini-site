@@ -1,0 +1,23 @@
+---
+import { site } from '../data/site';
+const { manifesto } = site;
+---
+
+<section class="manifesto band wrap" id="about" data-screen-label="Manifesto">
+  <img class="manifesto__slot" src={manifesto.image} alt={manifesto.imageAlt} loading="lazy" />
+  <div class="manifesto__veil"></div>
+  <div class="manifesto__inner inner">
+    <div class="mpanel frost">
+      <h2 class="display mpanel__h">{manifesto.heading}</h2>
+      <div class="principles">
+        {manifesto.principles.map((p) => (
+          <div class="principle">
+            <Fragment set:html={p.icon} />
+            <p>{p.text}</p>
+          </div>
+        ))}
+      </div>
+      <p class="mpanel__foot">{manifesto.foot}</p>
+    </div>
+  </div>
+</section>

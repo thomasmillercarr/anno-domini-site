@@ -1,0 +1,34 @@
+---
+import { site } from '../data/site';
+const { solution } = site;
+---
+
+<section class="solution band wrap" data-screen-label="Solution">
+  <div class="solution__grid inner">
+    <div>
+      <p class="label">{solution.label}</p>
+      <h2 class="display solution__h">{solution.heading}</h2>
+      <p class="body">{solution.body}</p>
+      <div class="osindex frost">
+        {solution.index.map((row) => (
+          <div class="os-row"><span>{row}</span><span class="dot"></span></div>
+        ))}
+      </div>
+    </div>
+    <div>
+      <div class="device mat-timber">
+        <img class="device__slot" src={solution.device.image} alt={solution.device.imageAlt} loading="lazy" />
+        <div class="device__panel frost">
+          <div class="device__io">
+            <span class="io-label">Input</span>
+            <span class="io-line"></span>
+            <span class="io-core"><span set:html={solution.device.core} /></span>
+            <span class="io-line"></span>
+            <span class="io-label">Output</span>
+          </div>
+        </div>
+        <p class="device__cap">{solution.device.caption}</p>
+      </div>
+    </div>
+  </div>
+</section>
