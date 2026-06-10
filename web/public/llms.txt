@@ -1,0 +1,20 @@
+# Anno Domini
+
+> Anno Domini is a fractional AI partner that builds custom AI operating systems inside UK small and medium businesses — installing infrastructure that returns time and decision-making to the people doing the work, then handing it over for the client to own.
+
+Anno Domini builds bespoke internal tooling and workflow automation (not subscription software or generic automation platforms). Engagements run as a repeatable cycle — brief, build, deliver, repeat — with each delivery small, documented, and owned by the client. Every tool was first built and run inside a live operation before any external client was taken on.
+
+## Main page
+- [Anno Domini — A Fractional AI Partner](https://annodom.com/): what Anno Domini does, who it is for, how engagements work, and proof of systems already running. Covers:
+  - **Approach / How it works** — the brief → build → deliver → repeat cycle; working solutions shipped in 3–7 days, with a walkthrough and documentation the client owns.
+  - **What we build** — a custom AI operating system installed inside the business (CV screening, client updates, report generation, CRM integration, pipeline views, query handling).
+  - **The problem** — manual hours lost to lead screening, client chasing, and unfinished pipeline spreadsheets.
+  - **Ways to work together** — Session, Audit, Project, Retainer.
+  - **Proof** — email lead generation, newsletter infrastructure, and pipeline reporting already deployed and in daily use.
+
+## Contact
+- Email: hello@os.partners
+- Region served: United Kingdom
+
+<!-- TODO: update host (https://annodom.com) when the final domain is confirmed.
+     Update the contact email if the mailbox moves off os.partners. -->

@@ -1,0 +1,71 @@
+---
+/**
+ * JSON-LD structured data (Organization + WebSite + WebPage) emitted into <head>.
+ *
+ * All absolute URLs derive from `Astro.site` (set in astro.config.mjs), so they
+ * auto-correct when the final domain is confirmed — no edit needed here.
+ *
+ * Every field maps to visible page content. Deliberately omitted until real data
+ * exists (do NOT fabricate): Organization.sameAs (LinkedIn/Companies House),
+ * foundingDate, and any Person/founder entity. No FAQPage schema until a visible
+ * FAQ section exists on the page.
+ */
+import { site } from '../data/site';
+
+const origin = Astro.site!.origin; // e.g. https://annodom.com
+const url = `${origin}/`;
+const orgId = `${origin}/#organization`;
+const siteId = `${origin}/#website`;
+const pageId = `${origin}/#webpage`;
+const logo = new URL(site.logo, Astro.site).href;
+const dateModified = new Date().toISOString().slice(0, 10);
+
+const schema = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': orgId,
+      name: site.brand,
+      url,
+      logo,
+      description: site.description,
+      areaServed: { '@type': 'Country', name: site.region },
+      knowsAbout: [
+        'AI workflow automation',
+        'Custom internal tooling',
+        'AI operating systems',
+        'Business process automation',
+      ],
+      contactPoint: {
+        '@type': 'ContactPoint',
+        email: site.email,
+        contactType: 'sales',
+        areaServed: 'GB',
+      },
+    },
+    {
+      '@type': 'WebSite',
+      '@id': siteId,
+      url,
+      name: site.brandFull,
+      publisher: { '@id': orgId },
+      inLanguage: 'en-GB',
+    },
+    {
+      '@type': 'WebPage',
+      '@id': pageId,
+      url,
+      name: site.brandFull,
+      description: site.description,
+      isPartOf: { '@id': siteId },
+      about: { '@id': orgId },
+      publisher: { '@id': orgId },
+      inLanguage: 'en-GB',
+      dateModified,
+    },
+  ],
+};
+---
+
+<script type="application/ld+json" set:html={JSON.stringify(schema)} />

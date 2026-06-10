@@ -1,9 +1,14 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
+import sitemap from '@astrojs/sitemap';
 
 // Static marketing site. Vercel auto-detects Astro and builds the static output;
 // no adapter is needed while output stays 'static'.
 export default defineConfig({
   output: 'static',
-  site: 'https://os.partners',
+  // TODO: confirm final domain — most likely annodom.com (os.partners was wrong).
+  // This is the single source of truth: canonical, OG, JSON-LD schema and the
+  // generated sitemap all derive their absolute URLs from this one value.
+  site: 'https://annodom.com',
+  integrations: [sitemap()],
 });

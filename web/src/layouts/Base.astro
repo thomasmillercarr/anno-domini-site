@@ -1,5 +1,6 @@
 ---
 import { site } from '../data/site';
+import Schema from '../components/Schema.astro';
 import '../styles/os-site.css';
 
 interface Props {
@@ -13,7 +14,7 @@ const ogImage = new URL(site.hero.image, Astro.site).href;
 ---
 
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en-GB" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -25,11 +26,18 @@ const ogImage = new URL(site.hero.image, Astro.site).href;
 
     <!-- Open Graph / social -->
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={site.brand} />
+    <meta property="og:locale" content="en_GB" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
     <meta property="og:image" content={ogImage} />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+
+    <!-- Structured data (Organization / WebSite / WebPage) -->
+    <Schema />
 
     <!-- Fonts: self-hosted Archivo (see @font-face in os-site.css). Preload the
          critical latin upright so first paint has the variable font ready. -->
