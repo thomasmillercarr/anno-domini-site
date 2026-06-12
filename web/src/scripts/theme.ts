@@ -18,6 +18,10 @@ toggle?.addEventListener('click', () => {
   } catch (e) {
     /* storage unavailable (private mode) — toggle still works for the session */
   }
+  // Swing the incoming icon in (CSS keyframe, gated behind html.motion).
+  toggle.classList.remove('is-flip');
+  void toggle.offsetWidth; // restart the animation on rapid toggles
+  toggle.classList.add('is-flip');
 });
 
 /* ---- nav scroll-state (IntersectionObserver, no per-frame scroll reads) ----

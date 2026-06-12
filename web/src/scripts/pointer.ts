@@ -10,6 +10,8 @@
  *  - `.os-row` items (What we build): a highlight glow that tracks the cursor
  *    horizontally across the row (`--mx`, a 0–100% position). The slide / dot
  *    grow / brighten is pure CSS :hover.
+ *  - `.btn` pills: a magnetic drift toward the cursor (`--bx` / `--by`, a few
+ *    px). The trailing ease comes from the .btn transform transition.
  *
  * Bails entirely for reduced-motion or coarse/no-hover pointers, leaving the
  * plain static design (the CSS reduced-motion block is an equivalent fallback).
@@ -69,10 +71,30 @@ function initRows(): void {
   });
 }
 
+function initMagnets(): void {
+  const btns = document.querySelectorAll<HTMLElement>('.btn');
+  btns.forEach((btn) => {
+    const onMove = rafThrottle((e: PointerEvent) => {
+      const r = btn.getBoundingClientRect();
+      const px = ((e.clientX - r.left) / r.width) * 2 - 1; // [-1, 1]
+      const py = ((e.clientY - r.top) / r.height) * 2 - 1;
+      btn.style.setProperty('--bx', `${(px * 5).toFixed(2)}px`);
+      btn.style.setProperty('--by', `${(py * 4).toFixed(2)}px`);
+    });
+
+    btn.addEventListener('pointermove', onMove as EventListener, { passive: true });
+    btn.addEventListener('pointerleave', () => {
+      btn.style.setProperty('--bx', '0px');
+      btn.style.setProperty('--by', '0px');
+    });
+  });
+}
+
 function init(): void {
   if (!enabled) return;
   initSteps();
   initRows();
+  initMagnets();
 }
 
 if (document.readyState === 'loading') {

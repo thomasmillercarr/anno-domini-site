@@ -9,6 +9,8 @@ const { howItWorks } = site;
     <div><p class="lede">{howItWorks.lede}</p></div>
   </div>
   <div class="steps inner">
+    {/* scroll-scrubbed cycle line (reveal.ts); display gated behind html.motion */}
+    <div class="steps-line" aria-hidden="true"></div>
     {howItWorks.steps.map((step) => (
       <div class="step">
         <p class="step__num">{step.num}</p>

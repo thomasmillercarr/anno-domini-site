@@ -43,7 +43,10 @@ const ogImage = new URL(site.hero.image, Astro.site).href;
          critical latin upright so first paint has the variable font ready. -->
     <link rel="preload" href="/fonts/archivo-latin-normal.woff2" as="font" type="font/woff2" crossorigin />
 
-    <!-- No-FOUC theme init: must run before paint, so it stays inline & un-bundled. -->
+    <!-- No-FOUC theme init + motion gate: must run before paint, so it stays
+         inline & un-bundled. The `motion` class arms the CSS motion layer
+         (entrance holds, parallax bleed) only when JS is running and the
+         visitor allows motion — see the MOTION LAYER block in os-site.css. -->
     <script is:inline>
       (function () {
         try {
@@ -52,6 +55,9 @@ const ogImage = new URL(site.hero.image, Astro.site).href;
             document.documentElement.setAttribute('data-theme', saved);
           }
         } catch (e) {}
+        if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          document.documentElement.classList.add('motion');
+        }
       })();
     </script>
   </head>
@@ -64,6 +70,7 @@ const ogImage = new URL(site.hero.image, Astro.site).href;
       import '../scripts/scroll';
       import '../scripts/statcard';
       import '../scripts/pointer';
+      import '../scripts/reveal';
     </script>
   </body>
 </html>

@@ -12,6 +12,11 @@
 
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+/* Under the motion layer, reveal.ts fades the card itself into the hero
+ * entrance (landing ≈1.3s in); hold the count/draw until then so they read
+ * on-screen rather than playing inside an invisible card. */
+const motionDelay = document.documentElement.classList.contains('motion') ? 1050 : 0;
+
 function decimalsOf(s: string): number {
   const dot = s.indexOf('.');
   return dot === -1 ? 0 : s.length - dot - 1;
@@ -63,7 +68,7 @@ function initStatcard(): void {
     (entries, obs) => {
       for (const entry of entries) {
         if (entry.isIntersecting) {
-          reveal();
+          window.setTimeout(reveal, motionDelay);
           obs.disconnect();
           break;
         }
