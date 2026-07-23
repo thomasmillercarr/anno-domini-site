@@ -3,13 +3,18 @@ import { site } from '../data/site';
 const { ladder } = site;
 ---
 
-<section class="ladder band wrap" data-screen-label="The ladder">
+<section class="ladder band wrap" id="ladder" data-screen-label="The ladder">
   <p class="label inner ladder__label">{ladder.label}</p>
   <div class="inner">
     {ladder.rungs.map((rung) => (
       <div class:list={['rung', { 'rung--active': rung.active }]}>
         <div class="rung__label">{rung.label}</div>
         <p class="rung__desc">{rung.desc}</p>
+        {rung.terms && (
+          <ul class="rung__terms">
+            {rung.terms.map((term) => <li>{term}</li>)}
+          </ul>
+        )}
         <span class:list={['rung__tag', { empty: !rung.active }]}>{rung.tag}</span>
       </div>
     ))}

@@ -9,10 +9,12 @@ node_modules/
 # astro
 .astro/
 
-# env
+# env (.env.example is tracked as the template)
 .env
+.env.local
 .env.production
 
 # logs / os
 npm-debug.log*
+dev-*.log
 .DS_Store

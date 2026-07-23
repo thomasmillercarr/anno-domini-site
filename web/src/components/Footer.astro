@@ -10,10 +10,10 @@ const { footer } = site;
       <div class="foot-letter__lead">
         <p class="display">{footer.lead}</p>
       </div>
-      <a class="foot-link" href={mailto}>{site.email}</a>
+      <a class="foot-link" href={mailto} data-booker-open>{site.email}</a>
     </div>
     <div class="inner"><hr class="hair" /></div>
-    <p class="foot-letter__copy inner">{footer.copy}</p>
+    <p class="foot-letter__copy inner">{footer.copy} <span class="foot-sep">·</span> <a class="foot-link foot-link--inline" href="/privacy">Privacy</a></p>
   </div>
   <div class="os-bar">
     <span class="os-bar__mark"><img class="os-bar__mark-img" src={site.logo} alt={site.logoAlt} /></span>

@@ -29,6 +29,11 @@ if (reduceMotion) {
     smoothWheel: true,
   });
 
+  // Expose for other scripts that need to pause smooth scroll (e.g. booker.ts
+  // locks the page while the contact panel is open). Absent under reduced
+  // motion, where Lenis never initialises.
+  (window as unknown as { __lenis?: Lenis }).__lenis = lenis;
+
   // Sync ScrollTrigger to Lenis, and run Lenis off GSAP's ticker.
   lenis.on('scroll', ScrollTrigger.update);
   gsap.ticker.add((time) => lenis.raf(time * 1000));

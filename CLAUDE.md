@@ -33,7 +33,10 @@ config.
 ## Project structure (`web/src/`)
 
 - [`pages/index.astro`](web/src/pages/index.astro) — the single page; composes the section components
-  in order: Nav → Hero → Manifesto → Problem → Solution → HowItWorks → Ladder → Proof → CTA → Footer.
+  in order: Nav → Hero → Manifesto → Problem → Solution → HowItWorks → Ladder → Proof → CTA → Footer →
+  Booker (the Booker contact panel renders last, outside the page flow).
+- [`pages/privacy.astro`](web/src/pages/privacy.astro) — the UK GDPR privacy notice at `/privacy`,
+  footer-linked and sharing `Base.astro` + the Booker panel (still a draft — see pre-launch note below).
 - [`layouts/Base.astro`](web/src/layouts/Base.astro) — `<html>`/`<head>` shell: meta/OG/canonical,
   font preconnect, a **no-FOUC inline theme script** (reads `localStorage['os-theme']` before paint),
   and the bundled deferred client scripts.
@@ -43,8 +46,10 @@ config.
 - [`styles/os-site.css`](web/src/styles/os-site.css) — the entire design system (tokens, type roles,
   layout helpers, component styles). Ported 1:1 from the prototype.
 - `scripts/` — client behaviour, bundled and imported by `Base.astro`: `theme.ts` (dark-mode toggle,
-  persists to `os-theme`), `scroll.ts` (Lenis smooth scroll + nav scroll states), `statcard.ts` (hero
-  stat counter).
+  persists to `os-theme`), `scroll.ts` (Lenis smooth scroll + nav scroll states; exposes `window.__lenis`
+  for scroll-lock), `statcard.ts` (hero stat counter), `pointer.ts` (magnetic cursor / parallax),
+  `reveal.ts` (scroll-linked entrance choreography, gated on `html.motion`), `booker.ts` (the GSAP-Flip
+  contact panel + Web3Forms submit). See the motion-layer notes for the `html.motion` gating pattern.
 - `components/` — one `.astro` per section, each importing `site` for its copy.
 
 ## Content lives in `site.ts` — and is still placeholder
@@ -89,24 +94,22 @@ palette, so theming holds:
 
 ## ⚠ Outstanding before launch — privacy policy
 
-A UK GDPR privacy notice was written, but it currently **exists only in the old export** at
-[`agency-wireframe/project/privacy-policy.html`](agency-wireframe/project/privacy-policy.html) — it was
-**never ported into the `web/` Astro build**, and the live footer
-([web/src/components/Footer.astro](web/src/components/Footer.astro)) links only a `mailto:`, not the
-policy. Before launch:
+The UK GDPR privacy notice **has now been ported** into the Astro build at
+[`web/src/pages/privacy.astro`](web/src/pages/privacy.astro) (live at `/privacy`), is **linked from the
+footer** ([web/src/components/Footer.astro](web/src/components/Footer.astro)) and from the Booker panel's
+consent line, and the contact email now reads from `site.ts`. The page is still a **draft** — these
+items remain before launch:
 
-1. **Recreate the policy as a page in `web/`** (e.g. `web/src/pages/privacy.astro`) and **link it from
-   the footer.**
-2. **Fill every `[PLACEHOLDER]`**: `[COMPANY LEGAL NAME]`, `[COMPANY NUMBER — if a registered
-   company]`, `[REGISTERED / POSTAL ADDRESS]`, `[CONTACT EMAIL]` (appears in §1, §7, and two `mailto:`
-   links), `[RETENTION PERIOD ...]` (§6), and the `[DATE — set on launch]` "Last updated" value.
-3. Remove the visible `.draft-note` banner and the top-of-file `TODO BEFORE LAUNCH` comment.
-4. The ICO contact details (§9) are real and correct — leave them as-is.
-5. The notice assumes email is collected via a **contact/enquiry form that does not yet exist** (the
-   site currently has only a `mailto:`). When that form is built, link this policy near its submit
-   button. If collection ever changes to a marketing/newsletter list, the lawful basis must change to
-   explicit consent (with an unsubscribe mechanism) — the current notice only covers legitimate-interest
-   enquiry handling.
+1. **Fill the remaining `[PLACEHOLDER]` tokens**: `[COMPANY LEGAL NAME]`, `[COMPANY NUMBER — if a
+   registered company]`, `[REGISTERED / POSTAL ADDRESS]`, `[RETENTION PERIOD ...]` (§6), and the
+   `[DATE — set on launch]` "Last updated" value. (The `[CONTACT EMAIL]` placeholder is already
+   resolved — it reads from `site.ts`.)
+2. Remove the visible `.draft-note` banner and the top-of-file `TODO BEFORE LAUNCH` comment.
+3. The ICO contact details (§9) are real and correct — leave them as-is.
+4. The enquiry form now exists — it's the **Booker** contact panel, which POSTs to **Web3Forms** (the
+   policy discloses Web3Forms + Google Workspace as processors). The lawful basis is
+   legitimate-interest enquiry handling; if collection ever changes to a marketing/newsletter list, the
+   basis must change to explicit consent (with an unsubscribe mechanism).
 
 ## Historical reference — the `agency-wireframe/` export
 

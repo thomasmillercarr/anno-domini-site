@@ -1,0 +1,176 @@
+---
+import Base from '../layouts/Base.astro';
+import Footer from '../components/Footer.astro';
+import Booker from '../components/Booker.astro';
+import { site } from '../data/site';
+
+const { email, brand, brandFull, logo, logoAlt } = site;
+const mailto = `mailto:${email}`;
+const title = `Privacy Policy — ${brandFull}`;
+const description =
+  'How Anno Domini collects, uses, and stores the personal data you provide when you contact us, and your rights under UK data protection law.';
+---
+
+<Base title={title} description={description}>
+  <!-- Minimal nav: this page has no hero, so the bar stays frosted. The logo and
+       "Back to site" both return to the homepage; the theme toggle reuses the
+       shared #modeToggle wiring from scripts/theme.ts. -->
+  <nav class="nav scrolled" id="nav" data-screen-label="Nav">
+    <a class="os-mark" href="/" aria-label={brand}><img class="os-mark__img" src={logo} alt={logoAlt} /></a>
+    <div class="nav-center"></div>
+    <div class="nav-right">
+      <a class="btn" href="/"><span class="mk">&larr;</span> Back to site</a>
+      <button class="nav-toggle" id="modeToggle" aria-label="Toggle light and dark">
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
+      </button>
+    </div>
+  </nav>
+
+  <span id="top"></span>
+
+  <main class="band wrap legal-main">
+    <article class="legal inner">
+      <p class="label">Legal</p>
+      <h1 class="display legal__title">Privacy Policy</h1>
+      <p class="legal__updated body">Last updated: [DATE — set on launch]</p>
+
+      <!-- Owner note: remove once the remaining legal-identity placeholders are
+           filled. Collection method and processors below are now accurate. -->
+      <div class="draft-note">
+        <strong>Note for the site owner — remove before launch.</strong>
+        Still to fill in: <strong>legal/trading name</strong>, <strong>company number</strong>
+        (if registered), <strong>registered/postal address</strong>, the
+        <strong>retention period</strong> in §6, and the “Last updated” date above. The
+        contact email, the contact-form description, the Web3Forms processor disclosure, and
+        the ICO details are already correct.
+      </div>
+
+      <p>This policy explains what personal data we collect when you contact us through this
+      website, how we use and store it, and the rights you have under UK data protection law
+      (the UK GDPR and the Data Protection Act 2018).</p>
+
+      <h2>1. Who we are</h2>
+      <p><strong>[COMPANY LEGAL NAME]</strong> (“we”, “us”, “our”), [COMPANY NUMBER — if a
+      registered company], of [REGISTERED / POSTAL ADDRESS], is the <strong>data
+      controller</strong> responsible for your personal data. If you have any questions about
+      this policy or your data, contact us at <a href={mailto}>{email}</a>.</p>
+
+      <h2>2. What personal data we collect</h2>
+      <p>We only collect the information you choose to give us. When you submit our on-site
+      contact form (the “Start a conversation” panel), we collect:</p>
+      <ul>
+        <li>your <strong>name</strong>;</li>
+        <li>your <strong>email address</strong>;</li>
+        <li>the contents of your <strong>message</strong> and any details you choose to include.</li>
+      </ul>
+      <p>If you email us directly instead, we receive whatever information your message
+      contains. We do not collect special category data, and we do not use tracking or
+      advertising cookies (see “Cookies and local storage” below).</p>
+
+      <h2>3. How we use it, and our lawful basis</h2>
+      <p>We use this information to respond to your enquiry, to discuss whether and how we can
+      work together, and to keep a record of our correspondence.</p>
+      <p>Our lawful basis for this processing is <strong>legitimate interests</strong> —
+      namely, responding to people who contact us about our services. Where you contact us
+      with a view to engaging us, we also rely on <strong>taking steps at your request before
+      entering into a contract</strong>. We do not use your details for marketing unless you
+      have separately and explicitly agreed to it.</p>
+
+      <h2>4. How it reaches us, and how we store it</h2>
+      <p>When you submit the contact form, your details are transmitted to us by
+      <strong>Web3Forms</strong>, a form-to-email delivery service that acts as our data
+      processor solely to forward your message to our inbox. We then hold your information
+      securely within <strong>Google Workspace</strong>, which also acts as a data processor
+      and stores the data on our behalf under a data processing agreement.</p>
+      <p>Some of this processing may take place outside the UK; where it does, it is protected
+      by an adequacy decision or by appropriate safeguards (such as the UK International Data
+      Transfer Addendum to the EU Standard Contractual Clauses). We apply reasonable technical
+      and organisational measures to keep your data secure.</p>
+
+      <h2>5. Who we share it with</h2>
+      <p>We share your personal data only with the service providers that help us run our
+      business (such as Web3Forms and Google, as described above), acting on our instructions,
+      or where we are required to do so by law. <strong>We do not sell, rent, or trade your
+      personal data to anyone.</strong></p>
+
+      <h2>6. How long we keep it</h2>
+      <p>We keep your information only for as long as we need it for the purposes above —
+      [RETENTION PERIOD — suggested: up to 24 months after our last contact, unless an ongoing
+      relationship means we need to keep it longer]. After that, we securely delete it.</p>
+
+      <h2>7. Your rights</h2>
+      <p>Under UK data protection law you have the right to:</p>
+      <ul>
+        <li>be informed about how we use your data (this notice);</li>
+        <li>access the personal data we hold about you;</li>
+        <li>have inaccurate data corrected;</li>
+        <li>have your data erased;</li>
+        <li>restrict or object to our processing of your data;</li>
+        <li>data portability;</li>
+        <li>withdraw consent at any time, where our processing relies on consent.</li>
+      </ul>
+      <p>To exercise any of these rights, email us at <a href={mailto}>{email}</a>. We will
+      respond within one month.</p>
+
+      <h2>8. Cookies and local storage</h2>
+      <p>This website does not use tracking or advertising cookies. It stores a single
+      functional preference in your browser (your light/dark theme choice) so the site
+      remembers how you like to view it. This is not used to identify or track you.</p>
+
+      <h2>9. Complaints</h2>
+      <p>If you have a concern about how we handle your personal data, please contact us first
+      so we can try to put it right. You also have the right to complain to the UK regulator,
+      the <strong>Information Commissioner’s Office (ICO)</strong>:</p>
+      <ul>
+        <li>online at <a href="https://ico.org.uk/make-a-complaint" target="_blank" rel="noopener">ico.org.uk/make-a-complaint</a></li>
+        <li>by phone on 0303 123 1113</li>
+        <li>by post to Information Commissioner’s Office, Wycliffe House, Water Lane, Wilmslow, Cheshire, SK9 5AF</li>
+      </ul>
+
+      <h2>10. Changes to this policy</h2>
+      <p>We may update this policy from time to time. Any changes will be posted on this page,
+      and the “Last updated” date above will show the latest version.</p>
+    </article>
+  </main>
+
+  <Footer />
+  <Booker />
+</Base>
+
+<style>
+  /* Page-scoped legal-prose rhythm. Uses the shared semantic tokens so the
+     notice inherits light/dark theming from os-site.css automatically. */
+  .legal-main { padding-top: clamp(140px, 18vh, 220px); }
+  .legal { max-width: 72ch; }
+  .legal__title { font-size: clamp(34px, 5vw, 60px); margin-bottom: 14px; }
+  .legal__updated { margin-bottom: clamp(34px, 5vh, 56px); color: var(--ink-mute); }
+  .legal h2 {
+    font-variation-settings: 'wdth' 116, 'wght' 540;
+    font-size: clamp(19px, 1.9vw, 25px);
+    line-height: 1.2; letter-spacing: -0.005em;
+    margin: clamp(34px, 5vh, 52px) 0 12px;
+    color: var(--ink);
+  }
+  .legal p, .legal li {
+    font-size: clamp(15.5px, 1.12vw, 17px);
+    line-height: 1.74; color: var(--ink-soft);
+    font-variation-settings: 'wdth' 100, 'wght' 400;
+  }
+  .legal p + p { margin-top: 14px; }
+  .legal ul { margin: 12px 0 0; padding-left: 1.25em; }
+  .legal li { margin-bottom: 8px; }
+  .legal a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+  .legal a:hover { opacity: 0.7; }
+  .legal strong { font-variation-settings: 'wdth' 104, 'wght' 600; color: var(--ink); }
+
+  /* Visible "fill these in" banner — for the site owner, remove once live. */
+  .draft-note {
+    margin-bottom: clamp(34px, 5vh, 52px);
+    padding: 18px 22px; border-radius: 8px;
+    border: var(--hair-w) dashed var(--accent-warm);
+    background: var(--bleed);
+    font-size: 14px; line-height: 1.6; color: var(--ink-soft);
+  }
+  .draft-note strong { color: var(--ink); }
+</style>

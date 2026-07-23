@@ -1,0 +1,119 @@
+---
+import { site } from '../data/site';
+const { booker, email } = site;
+const mailto = `mailto:${email}`;
+// Web3Forms access key is read on the client (PUBLIC_ env is exposed to the
+// browser). Surfaced here as a data-attribute so booker.ts can read it without
+// a second env lookup; empty until the owner sets PUBLIC_WEB3FORMS_KEY.
+const accessKey = import.meta.env.PUBLIC_WEB3FORMS_KEY ?? '';
+---
+
+<!--
+  The expanding booker. Rendered once at the end of <body>. Hidden until a
+  [data-booker-open] trigger is clicked, at which point booker.ts morphs the
+  clicked button into this full-screen panel (GSAP Flip) and submits to
+  Web3Forms. Progressive enhancement: with no JS the triggers keep their
+  mailto: fallback and this panel never appears.
+-->
+<div class="booker" id="booker" data-access-key={accessKey} hidden>
+  <div class="booker__scrim" data-booker-close></div>
+
+  <div
+    class="booker__panel"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="booker-heading"
+  >
+    <button class="booker__close" type="button" data-booker-close aria-label={booker.close}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+        <path d="M6 6l12 12M18 6L6 18"></path>
+      </svg>
+    </button>
+
+    <div class="booker__inner">
+      <!-- form state -->
+      <div class="booker__view booker__view--form" data-booker-view="form">
+        <p class="label booker__label">{booker.label}</p>
+        <h2 class="display booker__h" id="booker-heading">{booker.heading}</h2>
+        <p class="lede booker__intro">{booker.intro}</p>
+
+        <form class="booker__form" data-booker-form data-sending={booker.sending} novalidate>
+          <!-- Web3Forms fields not shown to the user. access_key is empty until
+               the owner sets PUBLIC_WEB3FORMS_KEY; an empty key fails the POST,
+               and booker.ts surfaces the mailto: fallback. -->
+          <input type="hidden" name="access_key" value={accessKey} />
+          <input type="hidden" name="subject" value={booker.subject} />
+          <input type="hidden" name="from_name" value={site.brand} />
+
+          <div class="booker__field">
+            <label class="label" for="booker-name">{booker.fields.name.label}</label>
+            <input
+              class="booker__input"
+              id="booker-name"
+              name="name"
+              type="text"
+              autocomplete="name"
+              placeholder={booker.fields.name.placeholder}
+              required
+            />
+          </div>
+
+          <div class="booker__field">
+            <label class="label" for="booker-email">{booker.fields.email.label}</label>
+            <input
+              class="booker__input"
+              id="booker-email"
+              name="email"
+              type="email"
+              autocomplete="email"
+              placeholder={booker.fields.email.placeholder}
+              required
+            />
+          </div>
+
+          <div class="booker__field">
+            <label class="label" for="booker-message">{booker.fields.message.label}</label>
+            <textarea
+              class="booker__input booker__textarea"
+              id="booker-message"
+              name="message"
+              rows="4"
+              placeholder={booker.fields.message.placeholder}
+              required
+            ></textarea>
+          </div>
+
+          <!-- Web3Forms honeypot: hidden from humans, catches bots. -->
+          <input type="checkbox" name="botcheck" tabindex="-1" autocomplete="off" class="booker__honeypot" aria-hidden="true" />
+
+          <div class="booker__actions">
+            <button class="btn btn--warm booker__submit" type="submit">
+              <span class="mk">&rarr;</span> <span data-booker-submit-label>{booker.submit}</span>
+            </button>
+          </div>
+
+          <!-- inline error, hidden until a submit fails -->
+          <p class="booker__error" data-booker-error hidden>
+            {booker.error} <a href={mailto}>{email}</a>
+          </p>
+
+          <p class="booker__consent">
+            {booker.consent} <a href={booker.policyHref}>{booker.policyText}</a>
+          </p>
+        </form>
+      </div>
+
+      <!-- success state -->
+      <div class="booker__view booker__view--done" data-booker-view="done" hidden>
+        <p class="label booker__label">{booker.label}</p>
+        <h2 class="display booker__h">{booker.success.heading}</h2>
+        <p class="lede booker__intro">{booker.success.body}</p>
+        <div class="booker__actions">
+          <button class="btn booker__submit" type="button" data-booker-close>
+            <span class="mk">&rarr;</span> {booker.close}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

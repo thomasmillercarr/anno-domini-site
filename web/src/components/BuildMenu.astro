@@ -1,0 +1,28 @@
+---
+import { site } from '../data/site';
+const { buildMenu } = site;
+---
+
+<section class="menu-sec band wrap" id="build" data-screen-label="Build menu">
+  <div class="cols inner">
+    <div><p class="label">{buildMenu.label}</p></div>
+    <div><p class="lede">{buildMenu.lede}</p></div>
+  </div>
+  <div class="menu inner">
+    {buildMenu.groups.map((group) => (
+      <div class="menu__group">
+        <h3 class="menu__gtitle">{group.title}</h3>
+        {group.systems.map((sys) => (
+          <div class="menu__system">
+            <p class="menu__name">
+              {sys.name}
+              {sys.live && <span class="live">Live today</span>}
+            </p>
+            <p class="menu__text">{sys.text}</p>
+          </div>
+        ))}
+      </div>
+    ))}
+  </div>
+  <p class="menu__foot inner">{buildMenu.foot}</p>
+</section>

@@ -418,7 +418,7 @@ section { position: relative; }
 /* ============================================================
    MANIFESTO
    ============================================================ */
-.manifesto { overflow: hidden; }
+.manifesto { position: relative; overflow: hidden; }
 .manifesto__veil {
   position: absolute; inset: 0; z-index: 1; pointer-events: none;
   background: linear-gradient(105deg, rgba(22,16,10,0.30), rgba(22,16,10,0.08) 60%);
@@ -582,6 +582,59 @@ section { position: relative; }
   color: var(--support); align-self: center; white-space: nowrap;
 }
 .rung__tag.empty { visibility: hidden; }
+/* Founding Build honesty terms: sit under the description (grid column 2). */
+.rung__terms {
+  grid-column: 2; margin: 18px 0 0; padding: 0; list-style: none;
+  display: flex; flex-direction: column; gap: 11px; max-width: 52ch;
+}
+.rung__terms li {
+  position: relative; padding-left: 20px;
+  font-size: clamp(14px, 1.02vw, 15.5px); line-height: 1.55; color: var(--ink-mute);
+}
+.rung__terms li::before {
+  content: ''; position: absolute; left: 3px; top: 0.62em;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--support);
+}
+
+/* ============================================================
+   BUILD MENU
+   ============================================================ */
+.menu {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: clamp(2px, 0.4vw, 6px) clamp(40px, 6vw, 96px);
+  margin-top: clamp(46px, 7vh, 82px);
+}
+.menu__group {
+  padding: clamp(28px, 3.4vh, 44px) 0;
+  border-top: var(--hair-w) solid var(--hair);
+}
+.menu__gtitle {
+  font-variation-settings: 'wdth' 118, 'wght' 640;
+  font-size: 12.5px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: clamp(20px, 2.6vh, 30px);
+}
+.menu__system + .menu__system { margin-top: clamp(18px, 2.4vh, 28px); }
+.menu__name {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px;
+  font-variation-settings: 'wdth' 112, 'wght' 580;
+  font-size: clamp(17px, 1.5vw, 21px); letter-spacing: -0.004em; color: var(--ink);
+}
+.live {
+  font-variation-settings: 'wdth' 104, 'wght' 560;
+  font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--accent); padding: 3px 8px; border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  transform: translateY(-0.15em);
+}
+.menu__text {
+  margin-top: 7px; max-width: 46ch;
+  font-size: clamp(14.5px, 1.05vw, 16px); line-height: 1.58; color: var(--ink-mute);
+}
+.menu__foot {
+  margin-top: clamp(38px, 5vh, 60px); padding-top: clamp(24px, 3vh, 36px);
+  border-top: var(--hair-w) solid var(--hair);
+  font-size: clamp(15px, 1.1vw, 17px); line-height: 1.6; color: var(--ink-soft); max-width: 60ch;
+}
 
 /* ============================================================
    PROOF
@@ -624,6 +677,10 @@ section { position: relative; }
 .foot-link { color: var(--ink); text-decoration: none; font-variation-settings: 'wdth' 108, 'wght' 540; font-size: 15px; letter-spacing: 0.02em; transition: opacity 200ms ease; }
 .foot-link:hover { opacity: 0.55; }
 .foot-letter__copy { margin-top: 22px; font-size: 12px; letter-spacing: 0.04em; color: var(--ink-mute); }
+/* Privacy link sits inline within the small copy line — match its scale. */
+.foot-link--inline { font-size: inherit; letter-spacing: inherit; font-variation-settings: 'wdth' 104, 'wght' 540; color: var(--ink-soft); text-decoration: underline; text-underline-offset: 2px; }
+.foot-link--inline:hover { color: var(--accent-warm); opacity: 1; }
+.foot-sep { opacity: 0.5; margin: 0 3px; }
 
 .os-bar {
   background: var(--charcoal); color: #B9B3A6;
@@ -792,4 +849,127 @@ html.motion .nav-toggle.is-flip svg {
   .os-row::before { display: none; }
   /* Nav underline appears instantly rather than wiping. */
   .nav-link::after { transition: none !important; }
+  /* Booker opens/closes instantly (booker.ts also skips the Flip morph). */
+  .booker__scrim { transition: none !important; }
 }
+
+/* ============================================================
+   BOOKER — expanding contact panel (Booker.astro + booker.ts)
+   The clicked CTA morphs (GSAP Flip) into this full-screen panel. Hidden via
+   the [hidden] attribute until opened; token-driven so it themes in dark mode.
+   ============================================================ */
+.booker { position: fixed; inset: 0; z-index: 1000; }
+.booker[hidden] { display: none; }
+
+/* Dim + blur the page behind. Fades via .is-open (set by booker.ts after the
+   element is unhidden, so the transition actually runs). */
+.booker__scrim {
+  position: absolute; inset: 0;
+  background: rgba(18, 16, 14, 0.46);
+  -webkit-backdrop-filter: blur(6px) saturate(104%);
+  backdrop-filter: blur(6px) saturate(104%);
+  opacity: 0;
+  transition: opacity 420ms cubic-bezier(.22, 1, .36, 1);
+}
+.booker.is-open .booker__scrim { opacity: 1; }
+
+/* The morphing surface. Fills the viewport; Flip animates it from the trigger
+   rect. transform-origin top-left keeps the Flip scale math stable. */
+.booker__panel {
+  position: absolute; inset: 0;
+  background: var(--surface);
+  border: var(--hair-w) solid var(--hair);
+  border-radius: 20px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  will-change: transform;
+  transform-origin: top left;
+}
+@media (min-width: 821px) {
+  /* Inset from the edges on larger screens so it reads as a panel, not a page. */
+  .booker__panel { inset: clamp(20px, 4vh, 56px); border-radius: 24px; }
+}
+
+.booker__close {
+  position: absolute; top: clamp(18px, 3vh, 30px); right: clamp(18px, 3vw, 34px);
+  z-index: 2;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; padding: 0;
+  border: var(--hair-w) solid var(--hair); border-radius: 999px;
+  background: transparent; color: var(--ink-soft); cursor: pointer;
+  transition: background 240ms ease, color 200ms ease, border-color 240ms ease;
+}
+.booker__close:hover { background: var(--bleed); color: var(--ink); border-color: var(--accent-warm); }
+.booker__close svg { width: 20px; height: 20px; }
+
+/* Centred reading column with the site's section rhythm. */
+.booker__inner {
+  max-width: 620px; margin: 0 auto;
+  padding: clamp(64px, 12vh, 132px) var(--pad-x) clamp(48px, 9vh, 96px);
+}
+
+.booker__view[hidden] { display: none; }
+
+.booker__label { color: var(--ink-mute); margin: 0 0 18px; }
+.booker__h {
+  margin: 0 0 18px;
+  font-size: clamp(30px, 5vw, 52px);
+  font-variation-settings: 'wdth' 96, 'wght' 540;
+  line-height: 1.02;
+}
+.booker__intro { color: var(--ink-soft); max-width: 46ch; margin: 0 0 clamp(30px, 5vh, 44px); }
+
+.booker__form { display: flex; flex-direction: column; gap: 22px; }
+.booker__field { display: flex; flex-direction: column; gap: 9px; }
+.booker__field .label { color: var(--ink-mute); }
+
+.booker__input {
+  width: 100%;
+  font-family: var(--font);
+  font-variation-settings: 'wdth' 104, 'wght' 420;
+  font-size: 16px;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: var(--hair-w) solid var(--hair);
+  border-radius: 12px;
+  padding: 13px 15px;
+  transition: border-color 220ms ease, background 220ms ease, box-shadow 220ms ease;
+}
+.booker__input::placeholder { color: var(--ink-mute); opacity: 0.8; }
+.booker__input:focus {
+  outline: none;
+  border-color: var(--accent-warm);
+  box-shadow: 0 0 0 3px var(--bleed);
+}
+/* Native invalid styling only after a submit attempt (booker.ts adds .was-validated). */
+.booker__form.was-validated .booker__input:invalid {
+  border-color: var(--accent);
+}
+.booker__textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
+
+/* Honeypot: visually removed but still focusable by bots that ignore CSS. */
+.booker__honeypot {
+  position: absolute !important; width: 1px; height: 1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+.booker__actions { margin-top: 6px; }
+.booker__submit[aria-disabled='true'] { opacity: 0.6; pointer-events: none; }
+
+.booker__error {
+  margin: 4px 0 0;
+  color: var(--accent);
+  font-variation-settings: 'wdth' 104, 'wght' 440;
+  font-size: 14px;
+}
+.booker__error[hidden] { display: none; }
+.booker__error a { color: inherit; }
+
+.booker__consent {
+  margin: 6px 0 0;
+  color: var(--ink-mute);
+  font-variation-settings: 'wdth' 102, 'wght' 400;
+  font-size: 12.5px; line-height: 1.5;
+}
+.booker__consent a { color: var(--ink-soft); text-decoration: underline; text-underline-offset: 2px; }
+.booker__consent a:hover { color: var(--accent-warm); }
