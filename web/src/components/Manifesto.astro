@@ -1,10 +1,18 @@
 ---
+import { Image } from 'astro:assets';
 import { site } from '../data/site';
 const { manifesto } = site;
 ---
 
 <section class="manifesto band wrap" id="about" data-screen-label="Manifesto">
-  <img class="manifesto__slot" src={manifesto.image} alt={manifesto.imageAlt} loading="lazy" />
+  <Image
+    class="manifesto__slot"
+    src={manifesto.image}
+    alt={manifesto.imageAlt}
+    widths={[640, 960, 1280, 1920]}
+    sizes="100vw"
+    loading="lazy"
+  />
   <div class="manifesto__veil"></div>
   <div class="manifesto__inner inner">
     <div class="mpanel frost">

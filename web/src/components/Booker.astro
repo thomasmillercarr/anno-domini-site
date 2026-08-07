@@ -88,7 +88,7 @@ const accessKey = import.meta.env.PUBLIC_WEB3FORMS_KEY ?? '';
 
           <div class="booker__actions">
             <button class="btn btn--warm booker__submit" type="submit">
-              <span class="mk">&rarr;</span> <span data-booker-submit-label>{booker.submit}</span>
+              <span class="mk" aria-hidden="true">&rarr;</span> <span data-booker-submit-label>{booker.submit}</span>
             </button>
           </div>
 
@@ -110,7 +110,7 @@ const accessKey = import.meta.env.PUBLIC_WEB3FORMS_KEY ?? '';
         <p class="lede booker__intro">{booker.success.body}</p>
         <div class="booker__actions">
           <button class="btn booker__submit" type="button" data-booker-close>
-            <span class="mk">&rarr;</span> {booker.close}
+            <span class="mk" aria-hidden="true">&rarr;</span> {booker.close}
           </button>
         </div>
       </div>

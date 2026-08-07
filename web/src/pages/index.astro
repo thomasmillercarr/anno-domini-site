@@ -14,17 +14,19 @@ import Footer from '../components/Footer.astro';
 import Booker from '../components/Booker.astro';
 ---
 
-<Base>
+<Base preloadHero>
   <Nav />
-  <Hero />
-  <Manifesto />
-  <Problem />
-  <Solution />
-  <BuildMenu />
-  <HowItWorks />
-  <Ladder />
-  <Proof />
-  <CTA />
+  <main id="main">
+    <Hero />
+    <Manifesto />
+    <Problem />
+    <Solution />
+    <BuildMenu />
+    <HowItWorks />
+    <Ladder />
+    <Proof />
+    <CTA />
+  </main>
   <Footer />
   <Booker />
 </Base>

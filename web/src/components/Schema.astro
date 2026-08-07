@@ -17,8 +17,11 @@ const url = `${origin}/`;
 const orgId = `${origin}/#organization`;
 const siteId = `${origin}/#website`;
 const pageId = `${origin}/#webpage`;
-const logo = new URL(site.logo, Astro.site).href;
-const dateModified = new Date().toISOString().slice(0, 10);
+// site.logo is an astro:assets ImageMetadata; .src is the emitted (hashed) path.
+const logo = new URL(site.logo.src, Astro.site).href;
+// A fixed date, not new Date(): rebuilding is not a content change, and
+// re-stamping dateModified on every deploy is a freshness signal we haven't earned.
+const dateModified = site.contentUpdated;
 
 const schema = {
   '@context': 'https://schema.org',

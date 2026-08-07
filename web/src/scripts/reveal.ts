@@ -28,42 +28,6 @@ function $all(sel: string, root: ParentNode = document): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(sel));
 }
 
-/**
- * Wrap every word of an element in a masked span pair
- * (<span class="w"><span class="w__i">word</span></span>), preserving nested
- * elements (the hero <em>) and whitespace. Returns the inner spans.
- */
-function splitWords(el: HTMLElement): HTMLElement[] {
-  const inners: HTMLElement[] = [];
-  const walk = (node: Node): void => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = node.textContent ?? '';
-      if (!text.trim()) return;
-      const frag = document.createDocumentFragment();
-      for (const part of text.split(/(\s+)/)) {
-        if (!part) continue;
-        if (/^\s+$/.test(part)) {
-          frag.appendChild(document.createTextNode(part));
-          continue;
-        }
-        const mask = document.createElement('span');
-        mask.className = 'w';
-        const inner = document.createElement('span');
-        inner.className = 'w__i';
-        inner.textContent = part;
-        mask.appendChild(inner);
-        frag.appendChild(mask);
-        inners.push(inner);
-      }
-      node.parentNode?.replaceChild(frag, node);
-    } else {
-      Array.from(node.childNodes).forEach(walk);
-    }
-  };
-  Array.from(el.childNodes).forEach(walk);
-  return inners;
-}
-
 /** Prime an inline icon for stroke drawing; returns stroked + filled shapes. */
 function prepIconDraw(svg: SVGSVGElement): {
   strokes: SVGGeometryElement[];
@@ -109,41 +73,13 @@ function rise(targets: gsap.TweenTarget, trigger: gsap.DOMTarget, opts: RiseOpts
   });
 }
 
-/* ---- hero: load entrance + scroll-out parallax ---- */
-function heroIntro(): void {
-  const hero = document.querySelector<HTMLElement>('.hero');
-  if (!hero) return;
-  const slot = hero.querySelector<HTMLElement>('.hero__slot');
-  const sub = hero.querySelector<HTMLElement>('.hero__sub');
-  const h1 = hero.querySelector<HTMLElement>('.hero__h1');
-  const ctaRow = hero.querySelector<HTMLElement>('.hero__cta');
-  const card = hero.querySelector<HTMLElement>('.statcard');
-  const nav = document.getElementById('nav');
-
-  const words = h1 ? splitWords(h1) : [];
-  if (words.length) gsap.set(words, { yPercent: 112 });
-  if (h1) gsap.set(h1, { opacity: 1 }); // container visible; the masked words now carry the hold
-
-  const tl = gsap.timeline({ defaults: { ease: EASE } });
-  if (slot) tl.fromTo(slot, { scale: 1.08 }, { scale: 1, duration: 2.0, ease: 'expo.out' }, 0);
-  if (sub) tl.fromTo(sub, { y: 16, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.6 }, 0.18);
-  if (words.length) {
-    tl.to(
-      words,
-      {
-        yPercent: 0,
-        duration: 0.95,
-        ease: 'expo.out',
-        stagger: 0.07,
-        onComplete: () => gsap.set(words, { clearProps: 'transform' }),
-      },
-      0.3,
-    );
-  }
-  if (nav) tl.fromTo(nav, { y: -14, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.8 }, 0.55);
-  if (ctaRow) tl.fromTo(ctaRow, { y: 14, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.6 }, 0.8);
-  if (card) tl.fromTo(card, { y: 26, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.8 }, 0.95);
-}
+/* ---- hero: load entrance ----
+   The hero entrance now lives entirely in CSS (see the MOTION LAYER block in
+   os-site.css) and its word masks are server-rendered by Hero.astro. The hero
+   is the LCP region, so nothing above the fold may wait on this bundle
+   downloading and parsing — that was worth ~600ms and, if the script ever
+   failed, left the headline invisible for 2.4s. Only the scroll-out parallax
+   below still needs GSAP. */
 
 function heroParallax(): void {
   const hero = document.querySelector<HTMLElement>('.hero');
@@ -287,14 +223,19 @@ function howItWorks(): void {
 
   // The lift uses --rise (composed via the CSS `translate` property) so the
   // pointer.ts magnetic `transform` keeps working after the scrub settles.
-  gsap.set(steps, { autoAlpha: 0.16, '--rise': '18px' });
+  //
+  // Deliberately no opacity here. This tween is scrubbed to scroll position, so
+  // dimming the steps meant the text genuinely sat at 0.16 alpha — 1.14:1
+  // against the ground — for anyone whose scroll happened to rest mid-band. The
+  // sequence still reads: the cycle line draws through each step as it rises.
+  gsap.set(steps, { '--rise': '18px' });
   if (line) gsap.set(line, { scaleX: 0 });
 
   const tl = gsap.timeline({
     scrollTrigger: { trigger: stepsWrap, start: 'top 80%', end: 'top 28%', scrub: 0.4 },
   });
   steps.forEach((step, i) => {
-    tl.to(step, { autoAlpha: 1, '--rise': '0px', duration: 0.8, ease: 'power2.out' }, i);
+    tl.to(step, { '--rise': '0px', duration: 0.8, ease: 'power2.out' }, i);
     if (line) tl.to(line, { scaleX: (i + 1) / steps.length, duration: 1, ease: 'none' }, i);
   });
 }
@@ -427,7 +368,6 @@ function init(): void {
   if (!motionOK) return;
   gsap.registerPlugin(ScrollTrigger);
 
-  heroIntro();
   heroParallax();
   manifesto();
   problem();

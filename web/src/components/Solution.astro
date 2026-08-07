@@ -1,4 +1,5 @@
 ---
+import { Image } from 'astro:assets';
 import { site } from '../data/site';
 const { solution } = site;
 ---
@@ -17,7 +18,14 @@ const { solution } = site;
     </div>
     <div>
       <div class="device mat-timber">
-        <img class="device__slot" src={solution.device.image} alt={solution.device.imageAlt} loading="lazy" />
+        <Image
+          class="device__slot"
+          src={solution.device.image}
+          alt={solution.device.imageAlt}
+          widths={[600, 900, 1400]}
+          sizes="(max-width: 1080px) 100vw, 50vw"
+          loading="lazy"
+        />
         <div class="device__panel frost">
           <div class="device__io">
             <span class="io-label">Input</span>

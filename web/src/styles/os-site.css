@@ -11,16 +11,23 @@
    ============================================================ */
 
 /* ---------- ARCHIVO — self-hosted variable font ----------
-   Both axes preserved: wght 300–800 (upright) + wdth 62–125. Italic is
-   weight-400 only, matching the original design request. Files live in
-   /public/fonts/ — no third-party round-trip, no render-blocking @import. */
+   Both axes preserved as ranges: wght 300–700 (upright) + wdth 90–125. Italic
+   is weight-400 only, matching the original design request. Files live in
+   /public/fonts/ — no third-party round-trip, no render-blocking @import.
+
+   The two latin faces are *-subset.woff2, built by scripts/subset-fonts.py from
+   the full upstream files (kept alongside them). The upright went 88KB -> 62KB,
+   which matters because it shares the first network wave with the LCP hero
+   image. The declared ranges below must match the axis ranges in that script;
+   re-run it after changing either. The latin-ext faces stay unsubset — nothing
+   in the copy triggers their unicode-range, so they are never fetched. */
 @font-face {
   font-family: 'Archivo';
   font-style: normal;
-  font-weight: 300 800;
-  font-stretch: 62% 125%;
+  font-weight: 300 700;
+  font-stretch: 90% 125%;
   font-display: swap;
-  src: url('/fonts/archivo-latin-normal.woff2') format('woff2');
+  src: url('/fonts/archivo-latin-normal-subset.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
@@ -36,9 +43,9 @@
   font-family: 'Archivo';
   font-style: italic;
   font-weight: 400;
-  font-stretch: 62% 125%;
+  font-stretch: 90% 125%;
   font-display: swap;
-  src: url('/fonts/archivo-latin-italic.woff2') format('woff2');
+  src: url('/fonts/archivo-latin-italic-subset.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
@@ -71,10 +78,17 @@
   --surface-2:   #EFEAE1;
   --ink:         #232220;
   --ink-soft:    #4A463F;
-  --ink-mute:    #847D71;
+  /* Was #847D71 — 3.62:1 on bone, an AA failure at the body sizes this is used
+     for (.menu__text, .label, placeholders). #726858 gives 4.86:1. */
+  --ink-mute:    #726858;
   --accent:      var(--clay);
   --accent-warm: var(--timber);
   --support:     var(--sage);
+  /* Clay is 2.67:1 on bone — fine as a border or fill (non-text wants 3:1) but
+     not as text. This is the text-safe clay; use it wherever the accent colour
+     carries words. Keeping the two separate avoids darkening every accent
+     hairline and hover bleed on the site just to satisfy a type rule. */
+  --accent-ink:  #745D47;
 
   /* hairlines */
   --hair:        rgba(35, 34, 32, 0.14);
@@ -116,6 +130,10 @@
   --ink-mute:    #9A9387;
   --accent:      var(--timber);
   --accent-warm: var(--timber);
+  /* Dark ground inverts the problem: clay is too dark to read here, so the
+     text-safe accent is just the accent. Must be redeclared — the :root value
+     is a dark brown that would vanish against #161412. */
+  --accent-ink:  var(--timber);
 
   --hair:        rgba(241, 236, 227, 0.16);
   --hair-soft:   rgba(241, 236, 227, 0.09);
@@ -132,6 +150,31 @@
 
 /* ---------- RESET ---------- */
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Keyboard focus. The UA default ring is effectively invisible against the dark
+   hero photo and the warm .btn fill, so every interactive element gets an
+   explicit two-tone ring: accent on the inside, a light halo outside so it
+   survives over photography as well as over the page ground. */
+:focus-visible {
+  outline: 2px solid var(--accent-warm);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+.on-hero :focus-visible,
+.hero :focus-visible {
+  outline-color: var(--on-img);
+  box-shadow: 0 0 0 5px rgba(24, 18, 12, 0.45);
+}
+
+.skip-link {
+  position: fixed; top: 0; left: 0; z-index: 999;
+  padding: 12px 20px;
+  background: var(--ground); color: var(--ink);
+  font-size: 15px; text-decoration: none;
+  border: var(--hair-w) solid var(--hair);
+  transform: translateY(-120%);
+}
+.skip-link:focus { transform: translateY(0); }
 html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
 body {
   font-family: var(--font);
@@ -549,7 +592,7 @@ section { position: relative; }
 .step:first-child { padding-left: 0; }
 .step__num {
   font-variation-settings: 'wdth' 100, 'wght' 520;
-  font-size: 12px; letter-spacing: 0.22em; color: var(--accent); margin-bottom: 18px;
+  font-size: 12px; letter-spacing: 0.22em; color: var(--accent-ink); margin-bottom: 18px;
 }
 .step__label {
   font-variation-settings: 'wdth' 124, 'wght' 660;
@@ -611,7 +654,7 @@ section { position: relative; }
 .menu__gtitle {
   font-variation-settings: 'wdth' 118, 'wght' 640;
   font-size: 12.5px; letter-spacing: 0.2em; text-transform: uppercase;
-  color: var(--accent); margin-bottom: clamp(20px, 2.6vh, 30px);
+  color: var(--accent-ink); margin-bottom: clamp(20px, 2.6vh, 30px);
 }
 .menu__system + .menu__system { margin-top: clamp(18px, 2.4vh, 28px); }
 .menu__name {
@@ -622,7 +665,7 @@ section { position: relative; }
 .live {
   font-variation-settings: 'wdth' 104, 'wght' 560;
   font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase;
-  color: var(--accent); padding: 3px 8px; border-radius: 3px;
+  color: var(--accent-ink); padding: 3px 8px; border-radius: 3px;
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   transform: translateY(-0.15em);
 }
@@ -656,7 +699,7 @@ section { position: relative; }
 .proof__imgs + .proof__bars .proof__bar { padding-left: clamp(16px, 2vw, 30px); }
 .proof__imgs + .proof__bars .proof__bar:first-child { padding-left: 0; }
 .proof__bar + .proof__bar { border-left: var(--hair-w) solid var(--hair); }
-.proof__bar b { color: var(--accent); font-variation-settings: 'wdth' 106, 'wght' 560; }
+.proof__bar b { color: var(--accent-ink); font-variation-settings: 'wdth' 106, 'wght' 560; }
 
 /* ============================================================
    CTA
@@ -747,22 +790,35 @@ section { position: relative; }
    reduced-motion visitors therefore keep the static design untouched.
    ============================================================ */
 
-/* Above-the-fold entrance hold. reveal.ts takes over with inline styles well
-   inside the 2.4s window; the keyframe is a safety net that shows everything
-   anyway if the script never executes. */
-html.motion .nav,
-html.motion .hero__sub,
-html.motion .hero__h1,
-html.motion .hero__cta,
-html.motion .statcard {
-  opacity: 0;
-  animation: motion-release 1ms linear 2.4s forwards;
+/* Above-the-fold entrance. This is deliberately CSS-only and gated on the media
+   query rather than html.motion: the hero is the LCP region, so its reveal must
+   not wait on GSAP parsing (~170KB) — or worse, sit at opacity 0 for 2.4s if the
+   script fails. Hero word spans are server-rendered by Hero.astro. */
+@media (prefers-reduced-motion: no-preference) {
+  .nav,
+  .hero__sub,
+  .hero__cta,
+  .statcard,
+  .hero__h1 .w__i {
+    animation: hero-in 700ms cubic-bezier(.22, 1, .36, 1) both;
+  }
+  /* Delays are kept deliberately short. Every element here is an LCP candidate
+     and LCP is taken at the first frame one paints non-transparent, so each
+     millisecond of delay is a millisecond straight onto the metric — the
+     statcard in particular is large enough to *be* the LCP element. */
+  .hero__h1 .w__i { animation-delay: calc(var(--wi, 0) * 35ms); }
+  .hero__sub  { animation-delay: 20ms; }
+  .hero__cta  { animation-delay: 110ms; }
+  .statcard   { animation-delay: 60ms; }
 }
-@keyframes motion-release { to { opacity: 1; } }
+@keyframes hero-in {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: none; }
+}
 
-/* Hero headline word masks (spans injected by reveal.ts). The padding/margin
-   pairs keep ascenders/descenders outside the 0.96 line-height box visible
-   once the words have settled. */
+/* Hero headline word masks (spans are server-rendered by Hero.astro). The
+   padding/margin pairs keep ascenders/descenders outside the 0.96 line-height
+   box visible once the words have settled. */
 .hero__h1 .w {
   display: inline-block; overflow: hidden; vertical-align: top;
   padding: 0.08em 0 0.14em; margin: -0.08em 0 -0.14em;
@@ -771,8 +827,13 @@ html.motion .statcard {
 
 /* Vertical bleed so the full-bleed photographs can parallax (reveal.ts scrubs
    yPercent within this ±12%) without exposing their edges. */
+/* 124% = the 12% bleed above plus 12% below. Must be an explicit height, not
+   `height: auto` with top/bottom: these are <img>, and now that astro:assets
+   emits width/height they have an intrinsic aspect ratio, which `auto` resolves
+   against instead of stretching between the offsets — collapsing the hero to
+   ~232px tall. */
 html.motion .hero__slot,
-html.motion .manifesto__slot { top: -12%; bottom: -12%; height: auto; }
+html.motion .manifesto__slot { top: -12%; bottom: auto; height: 124%; }
 
 /* Magnetic buttons: pointer.ts feeds --bx/--by; the existing .btn transform
    transition supplies the trailing ease. */
@@ -958,7 +1019,7 @@ html.motion .nav-toggle.is-flip svg {
 
 .booker__error {
   margin: 4px 0 0;
-  color: var(--accent);
+  color: var(--accent-ink);
   font-variation-settings: 'wdth' 104, 'wght' 440;
   font-size: 14px;
 }

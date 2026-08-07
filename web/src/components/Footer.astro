@@ -1,4 +1,5 @@
 ---
+import { Image } from 'astro:assets';
 import { site } from '../data/site';
 const mailto = `mailto:${site.email}`;
 const { footer } = site;
@@ -16,7 +17,7 @@ const { footer } = site;
     <p class="foot-letter__copy inner">{footer.copy} <span class="foot-sep">·</span> <a class="foot-link foot-link--inline" href="/privacy">Privacy</a></p>
   </div>
   <div class="os-bar">
-    <span class="os-bar__mark"><img class="os-bar__mark-img" src={site.logo} alt={site.logoAlt} /></span>
+    <span class="os-bar__mark"><Image class="os-bar__mark-img" src={site.logo} alt={site.logoAlt} width={128} densities={[1, 2]} loading="lazy" /></span>
     {footer.barCells.map((cell) => <span class="os-bar__cell">{cell}</span>)}
   </div>
 </footer>

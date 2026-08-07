@@ -1,17 +1,33 @@
 ---
+import { Image } from 'astro:assets';
 import { site } from '../data/site';
 const { hero } = site;
+
+// The headline ships pre-split into masked word spans. reveal.ts used to do
+// this at runtime, which meant the h1 stayed at opacity 0 until GSAP had
+// parsed — real text in the HTML instead, animated by CSS alone.
+const leadWords = hero.headlineLead.split(/(\s+)/).filter((p) => p.trim());
 ---
 
 <header class="hero" data-screen-label="Hero">
-  <img class="hero__slot" src={hero.image} alt={hero.imageAlt} fetchpriority="high" />
+  <Image
+    class="hero__slot"
+    src={hero.image}
+    alt={hero.imageAlt}
+    widths={[640, 960, 1280, 1920, 2675]}
+    sizes="100vw"
+    loading="eager"
+    fetchpriority="high"
+  />
   <div class="hero__veil"></div>
   <div class="hero__grid wrap inner">
     <div>
       <p class="label hero__sub">{hero.sub}</p>
-      <h1 class="display-xl hero__h1">{hero.headlineLead}<em>{hero.headlineEm}</em></h1>
+      <h1 class="display-xl hero__h1">{leadWords.map((word, i) => (
+        <><span class="w"><span class="w__i" style={`--wi:${i}`}>{word}</span></span>{' '}</>
+      ))}<span class="w"><em class="w__i" style={`--wi:${leadWords.length}`}>{hero.headlineEm}</em></span></h1>
       <div class="hero__cta">
-        <a class="btn btn--onimg" href={hero.ctaHref}><span class="mk">&rarr;</span> {hero.cta}</a>
+        <a class="btn btn--onimg" href={hero.ctaHref}><span class="mk" aria-hidden="true">&rarr;</span> {hero.cta}</a>
       </div>
     </div>
     <div class="statcard frost">

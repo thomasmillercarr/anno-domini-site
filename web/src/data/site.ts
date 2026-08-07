@@ -8,7 +8,21 @@
  *
  * Every component reads from `site` — nothing is hard-coded in markup. To change
  * wording, edit this file only.
+ *
+ * Images are imported, not written as paths: that hands them to `astro:assets`,
+ * which emits width/height and a responsive srcset at build time. Components
+ * render them with <Image>, never a bare <img>.
  */
+
+import type { ImageMetadata } from 'astro';
+
+import logoImg from '../assets/anno-domini-logo.png';
+import heroImg from '../assets/hero-anno-1.webp';
+import manifestoImg from '../assets/manifesto-bg.webp';
+import solutionImg from '../assets/solution-bg.webp';
+import proofPipelineImg from '../assets/proof-3-pipeline.webp';
+import proofNewsletterImg from '../assets/proof-2-newsletter.webp';
+import proofEmailImg from '../assets/proof-1-email.webp';
 
 export interface NavLink {
   label: string;
@@ -37,7 +51,7 @@ export interface Rung {
 }
 
 export interface ProofImage {
-  src: string;
+  src: ImageMetadata;
   alt: string;
 }
 
@@ -76,13 +90,15 @@ export const site = {
   brandFull: 'Anno Domini · A Fractional AI Partner',
   // Wordmark logo (the "AD" leaf). Monochrome dark artwork on a transparent
   // background — the CSS flips it to light over the hero photo / dark theme.
-  logo: '/assets/anno-domini-logo.png',
+  logo: logoImg,
   logoAlt: 'Anno Domini',
   tagline: 'Anno Domini · A fractional AI partner, UK',
   description:
     'Your diary, CRM, inbox and spreadsheets already do their jobs. Nothing makes them talk to each other. Anno Domini builds the system that does, integrated with the tools you already run, and you own it outright.',
   email: 'hello@os.partners',
   region: 'United Kingdom',
+  /** Feeds JSON-LD `dateModified`. Bump when the copy actually changes, not on deploy. */
+  contentUpdated: '2026-08-07',
 
   /* ---- navigation ---- */
   nav: [
@@ -94,8 +110,8 @@ export const site = {
 
   /* ---- hero ---- */
   hero: {
-    image: '/assets/hero-banner.webp',
-    imageAlt: 'Light through timber structure',
+    image: heroImg,
+    imageAlt: 'Luminous filaments of light converging into glowing nodes',
     sub: 'Anno Domini · A fractional AI partner, UK',
     // `headlineLead` + emphasised `headlineEm` render as: "… <em>agency.</em>"
     headlineLead: 'Infrastructure that returns ',
@@ -115,7 +131,7 @@ export const site = {
 
   /* ---- manifesto ---- */
   manifesto: {
-    image: '/assets/manifesto-bg.webp',
+    image: manifestoImg,
     imageAlt: 'Raw timber beam in shadow',
     heading: 'Built to return agency.',
     principles: [
@@ -146,7 +162,7 @@ export const site = {
     // Teaser for the Build Menu below: the four groups the systems fall into.
     index: ['Win the work', 'Keep it moving', 'Be seen', 'Handle the admin'],
     device: {
-      image: '/assets/solution-bg.webp',
+      image: solutionImg,
       imageAlt: 'Timber work surface',
       core: 'System<br>by design',
       caption: 'Manual work in. Owned, documented systems out.',
@@ -241,9 +257,9 @@ export const site = {
     statement: 'Already running inside a real business.',
     body: 'These systems are not a demo. Several are already running inside small transportation businesses today, built and deployed in live operations before a single external client was taken on.',
     images: [
-      { src: '/assets/proof-3-pipeline.webp', alt: 'Pipeline reporting view' },
-      { src: '/assets/proof-2-newsletter.webp', alt: 'Client communication engine' },
-      { src: '/assets/proof-1-email.webp', alt: 'Lead follow-up system' },
+      { src: proofPipelineImg, alt: 'Pipeline reporting view' },
+      { src: proofNewsletterImg, alt: 'Client communication engine' },
+      { src: proofEmailImg, alt: 'Lead follow-up system' },
     ] as ProofImage[],
     bars: [
       { title: 'Reporting and pipeline', note: '147 live deals, refreshed every six hours' },

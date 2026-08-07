@@ -1,4 +1,5 @@
 ---
+import { getImage } from 'astro:assets';
 import { site } from '../data/site';
 import Schema from '../components/Schema.astro';
 import '../styles/os-site.css';
@@ -6,11 +7,27 @@ import '../styles/os-site.css';
 interface Props {
   title?: string;
   description?: string;
+  /** Homepage only: emits a preload for the hero, which is the LCP element. */
+  preloadHero?: boolean;
 }
 
-const { title = site.brandFull, description = site.description } = Astro.props;
+const { title = site.brandFull, description = site.description, preloadHero = false } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site).href;
-const ogImage = new URL(site.hero.image, Astro.site).href;
+// A dedicated 1200x630 JPEG. The hero is 2675px of WebP — too big for the
+// scrapers, and several of them (LinkedIn, Slack) don't render WebP at all.
+const ogImage = new URL('/assets/og.jpg', Astro.site).href;
+
+// Without this the browser only discovers the hero after the stylesheet
+// resolves — 600ms of pure load delay on a throttled connection. Built with the
+// same widths/sizes as the <Image> in Hero.astro so the preload and the real
+// request are one and the same.
+const heroPreload = preloadHero
+  ? await getImage({
+      src: site.hero.image,
+      widths: [640, 960, 1280, 1920, 2675],
+      sizes: '100vw',
+    })
+  : null;
 ---
 
 <!DOCTYPE html>
@@ -32,16 +49,35 @@ const ogImage = new URL(site.hero.image, Astro.site).href;
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
     <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={site.brandFull} />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+
+    <!-- Matches the two theme grounds so mobile browser chrome doesn't clash. -->
+    <meta name="theme-color" content="#F4F1EC" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#161412" media="(prefers-color-scheme: dark)" />
 
     <!-- Structured data (Organization / WebSite / WebPage) -->
     <Schema />
 
     <!-- Fonts: self-hosted Archivo (see @font-face in os-site.css). Preload the
          critical latin upright so first paint has the variable font ready. -->
-    <link rel="preload" href="/fonts/archivo-latin-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/archivo-latin-normal-subset.woff2" as="font" type="font/woff2" crossorigin />
+
+    {heroPreload && (
+      <link
+        rel="preload"
+        as="image"
+        href={heroPreload.src}
+        imagesrcset={heroPreload.srcSet.attribute}
+        imagesizes="100vw"
+        fetchpriority="high"
+      />
+    )}
 
     <!-- No-FOUC theme init + motion gate: must run before paint, so it stays
          inline & un-bundled. The `motion` class arms the CSS motion layer
@@ -62,16 +98,26 @@ const ogImage = new URL(site.hero.image, Astro.site).href;
     </script>
   </head>
   <body>
+    <a class="skip-link" href="#main">Skip to content</a>
     <slot />
 
-    <!-- Bundled, deferred client behaviour. -->
+    <!-- theme.ts is tiny and wires the mode toggle, so it stays in the entry
+         chunk. Everything else pulls in GSAP + Lenis (~170KB); loading that
+         eagerly costs main-thread time before the page is even interactive, so
+         it waits for idle. Nothing below depends on running before first paint. -->
     <script>
       import '../scripts/theme';
-      import '../scripts/scroll';
-      import '../scripts/statcard';
-      import '../scripts/pointer';
-      import '../scripts/reveal';
-      import '../scripts/booker';
+
+      const idle: (cb: () => void) => void =
+        window.requestIdleCallback?.bind(window) ?? ((cb) => setTimeout(cb, 1));
+
+      idle(() => {
+        import('../scripts/scroll');
+        import('../scripts/statcard');
+        import('../scripts/pointer');
+        import('../scripts/reveal');
+        import('../scripts/booker');
+      });
     </script>
   </body>
 </html>

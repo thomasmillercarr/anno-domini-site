@@ -14,12 +14,24 @@
  */
 
 import { gsap } from 'gsap';
-import { Flip } from 'gsap/Flip';
 
-gsap.registerPlugin(Flip);
+// Flip (~25KB) is dead weight until someone actually opens the panel, so it is
+// not in the entry chunk. Warm it in the background instead of awaiting it at
+// click time: if a click somehow lands first, `Flip` is still null and the
+// instant open/close path below — the one reduced-motion visitors get — runs.
+let Flip: typeof import('gsap/Flip').Flip | null = null;
+void import('gsap/Flip').then((m) => {
+  gsap.registerPlugin(m.Flip);
+  Flip = m.Flip;
+});
 
+// `:not([type="hidden"])` matters: the form opens with three hidden Web3Forms
+// inputs, so without it the "focus the first field" call on open resolved to a
+// hidden input, .focus() silently did nothing, and opening the dialog left
+// keyboard focus stranded on the page behind it. The Tab trap below filters on
+// offsetParent so it was unaffected — this is the shared fix for both.
 const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 function init() {
   const booker = document.getElementById('booker');
@@ -42,6 +54,7 @@ function init() {
   let isOpen = false;
   let lastTrigger: HTMLElement | null = null;
   let activeTween: gsap.core.Tween | null = null;
+  let flewOpen = false;
 
   /* ---- scroll lock (defer to Lenis when it's running) ---- */
   const lockScroll = () => {
@@ -68,7 +81,11 @@ function init() {
     booker.classList.add('is-open');
     lockScroll();
 
-    if (motion) {
+    // Latched at open time so close animates the same way it opened, even if
+    // Flip finished loading in between.
+    flewOpen = motion && Flip !== null;
+
+    if (flewOpen && Flip) {
       const state = Flip.getState(panel);
       Flip.fit(panel, trigger, { scale: true });
       gsap.set(inner, { autoAlpha: 0 });
@@ -83,7 +100,7 @@ function init() {
 
     // focus the first field (or the close button)
     const firstField = form.querySelector<HTMLElement>(FOCUSABLE);
-    window.setTimeout(() => firstField?.focus({ preventScroll: true }), motion ? 240 : 0);
+    window.setTimeout(() => firstField?.focus({ preventScroll: true }), flewOpen ? 240 : 0);
   };
 
   /* ---- close ---- */
@@ -108,7 +125,7 @@ function init() {
     activeTween?.kill();
     booker.classList.remove('is-open');
 
-    if (motion && lastTrigger) {
+    if (flewOpen && Flip && lastTrigger) {
       gsap.to(inner, { autoAlpha: 0, duration: 0.16, ease: 'power1.in' });
       activeTween = Flip.fit(panel, lastTrigger, {
         scale: true,
