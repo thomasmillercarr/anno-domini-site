@@ -33,42 +33,45 @@ config.
 ## Project structure (`web/src/`)
 
 - [`pages/index.astro`](web/src/pages/index.astro) — the single page; composes the section components
-  in order: Nav → Hero → Manifesto → Problem → Solution → HowItWorks → Ladder → Proof → CTA → Footer →
-  Booker (the Booker contact panel renders last, outside the page flow).
+  in order: Nav → Hero → Manifesto → Problem → Solution → BuildMenu → HowItWorks → Ladder → Proof →
+  CTA → Footer → Booker (the Booker contact panel renders last, outside the page flow).
 - [`pages/privacy.astro`](web/src/pages/privacy.astro) — the UK GDPR privacy notice at `/privacy`,
   footer-linked and sharing `Base.astro` + the Booker panel (still a draft — see pre-launch note below).
-- [`layouts/Base.astro`](web/src/layouts/Base.astro) — `<html>`/`<head>` shell: meta/OG/canonical,
-  font preconnect, a **no-FOUC inline theme script** (reads `localStorage['os-theme']` before paint),
-  and the bundled deferred client scripts.
+- [`layouts/Base.astro`](web/src/layouts/Base.astro) — `<html>`/`<head>` shell: meta/OG/canonical, a
+  **font preload** for the subset Archivo woff2 (self-hosted, so there is no preconnect), a
+  conditional hero-image preload, a **no-FOUC inline script** (restores `localStorage['os-theme']` and
+  sets `html.motion` before paint — this is the single gate for the whole motion layer), and the
+  client scripts, deferred to `requestIdleCallback`.
 - [`data/site.ts`](web/src/data/site.ts) — **single source of truth for all copy.** Every component
   reads from the exported `site` object; nothing is hard-coded in markup. To change wording, edit this
   file only.
 - [`styles/os-site.css`](web/src/styles/os-site.css) — the entire design system (tokens, type roles,
-  layout helpers, component styles). Ported 1:1 from the prototype.
-- `scripts/` — client behaviour, bundled and imported by `Base.astro`: `theme.ts` (dark-mode toggle,
-  persists to `os-theme`), `scroll.ts` (Lenis smooth scroll + nav scroll states; exposes `window.__lenis`
-  for scroll-lock), `statcard.ts` (hero stat counter), `pointer.ts` (magnetic cursor / parallax),
-  `reveal.ts` (scroll-linked entrance choreography, gated on `html.motion`), `booker.ts` (the GSAP-Flip
-  contact panel + Web3Forms submit). See the motion-layer notes for the `html.motion` gating pattern.
+  layout helpers, component styles). Originally ported 1:1 from the prototype; it has since gained the
+  self-hosted `@font-face` block, the motion layer, press states, and the reduced-motion /
+  high-contrast blocks.
+- `scripts/` — client behaviour, bundled and imported by `Base.astro`: `theme.ts` (dark-mode toggle
+  persisted to `os-theme`, **plus the nav `.scrolled` / `.on-hero` states**, driven by two
+  `IntersectionObserver` sentinels rather than a scroll listener), `scroll.ts` (Lenis smooth scroll and
+  smooth in-page anchors; exposes `window.__lenis` for scroll-lock), `statcard.ts` (hero stat counter),
+  `pointer.ts` (magnetic cursor / parallax), `reveal.ts` (scroll-linked entrance choreography, gated on
+  `html.motion`), `booker.ts` (the GSAP-Flip contact panel + Web3Forms submit). See the motion-layer
+  notes for the `html.motion` gating pattern.
 - `components/` — one `.astro` per section, each importing `site` for its copy.
 
-## Content lives in `site.ts` — and is still placeholder
+## Content lives in `site.ts`
 
-[`web/src/data/site.ts`](web/src/data/site.ts) is the only file to touch for copy. **Its own header
-flags that the content is placeholder copy carried over verbatim from the Claude Design wireframe.**
-This matters because the page currently has **two strata of copy that don't share a voice**:
+[`web/src/data/site.ts`](web/src/data/site.ts) is the only file to touch for copy.
 
-- A **newer brand layer** (intentional, post-import): brand `Anno Domini`, the hero headline
-  *"Infrastructure that returns agency,"* the whole Manifesto section, the footer lines. Abstract,
-  craft-led, "precision that feels grown."
-- An **unedited imported layer**: the Problem, Solution, HowItWorks, Ladder, Proof, and CTA sections
-  are the wireframe's original recruitment-specific copy (CV screening, "JD Generator," the
-  Session→Audit→Project→Retainer ladder, "Book a session").
+The copy is **written and coherent** — it is no longer the wireframe's placeholder text. It is written
+against `WEBSITE-COPY-SOURCE.md` (the offer), and that document's §0 voice rules apply to every string
+in the file: British English, no exclamation marks, no em/en dashes used as a pause (commas or full
+stops instead; hyphenated compounds are fine), understated, the catch stated rather than hidden.
+Match that voice when editing.
 
-The seam between these two is the source of the known positioning/voice contradictions
-(recruitment-specific vs. broad-SMB positioning; soft-enquiry intent vs. a transactional "Book a
-session" CTA + tiered ladder). A copy rewrite to resolve this is **outstanding** — when doing it, edit
-`site.ts` only and settle the target reader + voice first.
+The ladder is **Founding Build → The Audit → The Retainer** under the heading "Three ways in", and the
+CTA is the soft "Start a conversation". The wireframe's recruitment-oriented sections and its
+transactional CTA were rewritten out some time ago; if you find a description of them anywhere, it is
+stale.
 
 ## Design system (`web/src/styles/os-site.css`)
 
@@ -81,8 +84,16 @@ palette, so theming holds:
   `--ink`, `--ink-soft`, `--ink-mute`, `--accent`, `--accent-warm`, `--support`, `--frost-*`,
   `--on-img`/`--on-img-mute`) reference raw palette tokens (`--bone`, `--linen`, `--sand`, `--timber`,
   `--clay`, `--sage`, `--charcoal`).
-- **Typography**: a single variable font, **Archivo**, loaded from Google Fonts via `@import` at the
-  top of `os-site.css` (with preconnect in `Base.astro`). The design leans hard on variable-font axes —
+- **Motion**: one easing token, `--ease` (`cubic-bezier(.22, 1, .36, 1)`, a quintic decelerate). Every
+  transition and keyframe uses it; durations stay per-component. Do not reintroduce the bare `ease`
+  keyword — it is ease-in-out, and mixing the two is what made transitions meant to match visibly
+  differ. The one deliberate exception is the statcard's 1100ms line draw.
+- **Press**: `:active` states live in one block near the `:focus-visible` rules. They ride the
+  independent `scale` property, never `transform`, so they compose with the magnetic translate on
+  `.btn`. Press-in is 90ms against the slower hover ease; the release settles on the base duration.
+- **Typography**: a single variable font, **Archivo**, **self-hosted** from `web/public/fonts/` via the
+  `@font-face` block at the top of `os-site.css` (subset by `scripts/subset-fonts.py`; preloaded in
+  `Base.astro`, no third-party round-trip). The design leans hard on variable-font axes —
   `font-variation-settings` sets width (`wdth` 62–125) and weight (`wght`) per type role (`.display`,
   `.display-xl`, `.label`, `.body`, `.lede`, etc.). Preserve the exact axis values; they carry the brand.
 - **Frosted glass** (`.frost`, `.btn`) uses `backdrop-filter: blur(...)` over photographic backgrounds.
@@ -125,8 +136,10 @@ provenance and assets.
 - **`project/image-slot.js`** — a Claude Design custom element (`<image-slot>`) for filling mockup
   images. **Design-tool infrastructure, not shipped** — the Astro build already replaced it with
   ordinary `<img>`. Ignore it unless you specifically need to understand the old prototype.
-- **`project/assets/`** — the real background/proof images (`hero-banner.png`, `manifesto-bg.png`,
-  `solution-bg.png`, `proof-1..3-*.png`). These are the live assets, referenced by `site.ts` and served
-  from `web/public/assets/`.
+- **`project/assets/`** — the original PNG background/proof images. These are **no longer the live
+  assets**: the shipped versions are `.webp` in [`web/src/assets/`](web/src/assets/), imported by
+  `site.ts` so `astro:assets` can emit width/height and a responsive srcset at build time. Keep this
+  folder as the source provenance only. (`web/public/assets/` now holds just `og.jpg`, referenced by
+  `Base.astro` for the social card — everything else moved out of `public/`.)
 - **`project/uploads/` and `project/screenshots/`** — design-process scratch (user uploads, scan/fix/v2/v3
   iteration shots). Not part of the site; ignore unless referenced.
