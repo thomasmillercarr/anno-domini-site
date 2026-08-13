@@ -166,6 +166,27 @@
   box-shadow: 0 0 0 5px rgba(24, 18, 12, 0.45);
 }
 
+/* ---------- PRESS — pointer-down feedback ----------
+   Acknowledge the press, not the release. Press-in (90ms) deliberately undercuts
+   the hover ease (340ms) so the surface has reached bottom before the finger
+   lifts; the release settles on the house curve from each base rule.
+
+   Uses the independent `scale` property rather than `transform` — same trick as
+   `html.motion .step { translate: ... }` further down — so a press composes with
+   the magnetic translate on .btn instead of clobbering it.
+
+   .os-row and .step are pointedly excluded: both have rich hover states but
+   neither is clickable, and press feedback on a dead element is a lie. */
+html { -webkit-tap-highlight-color: transparent; }
+a, button { touch-action: manipulation; }
+
+.btn:active,
+.nav-toggle:active,
+.booker__close:active { scale: 0.965; transition-duration: 90ms; }
+
+.nav-link:active,
+.foot-link:active     { opacity: 0.42; transition-duration: 90ms; }
+
 .skip-link {
   position: fixed; top: 0; left: 0; z-index: 999;
   padding: 12px 20px;
@@ -250,7 +271,8 @@ img { display: block; max-width: 100%; }
   text-decoration: none;
   white-space: nowrap;
   transition: background 340ms cubic-bezier(.22,1,.36,1),
-              border-color 340ms ease, color 200ms ease, transform 340ms cubic-bezier(.22,1,.36,1);
+              border-color 340ms ease, color 200ms ease, transform 340ms cubic-bezier(.22,1,.36,1),
+              scale 340ms cubic-bezier(.22,1,.36,1);
 }
 .btn .mk {
   font-size: 13px; line-height: 1; opacity: 0.55;
@@ -378,7 +400,8 @@ section { position: relative; }
   width: 38px; height: 38px; border-radius: 999px;
   border: 1px solid var(--hair); background: transparent;
   display: grid; place-items: center; cursor: pointer; color: var(--ink);
-  transition: background 200ms ease, border-color 360ms ease, color 360ms ease;
+  transition: background 200ms ease, border-color 360ms ease, color 360ms ease,
+              scale 280ms cubic-bezier(.22,1,.36,1);
 }
 .nav-toggle:hover { background: var(--bleed); }
 .nav-toggle svg { width: 17px; height: 17px; }
@@ -912,6 +935,39 @@ html.motion .nav-toggle.is-flip svg {
   .nav-link::after { transition: none !important; }
   /* Booker opens/closes instantly (booker.ts also skips the Flip morph). */
   .booker__scrim { transition: none !important; }
+  /* Press still acknowledges — through colour, not a scale. The .btn rule is not
+     redundant with :hover: touch never fires :hover, so without it a
+     reduced-motion visitor on a phone gets no press feedback at all. */
+  .btn:active, .nav-toggle:active, .booker__close:active { scale: none; }
+  .btn:active { background: var(--bleed-on); border-color: var(--accent-warm); }
+}
+
+/* ============================================================
+   HIGH CONTRAST
+   Token overrides only — no layout or structural change, so this cannot regress
+   the normal-contrast design. Every component styles against the semantic
+   tokens, so darkening them here propagates through the hairlines and all
+   secondary type without a single per-component rule.
+   ============================================================ */
+@media (prefers-contrast: more) {
+  :root {
+    --hair:        rgba(35, 34, 32, 0.34);
+    --hair-soft:   rgba(35, 34, 32, 0.20);
+    --ink-soft:    #35322C;
+    --ink-mute:    #5A5245;
+    /* Light type over photography is the weakest on the page (hero sub, nav
+       links in the .on-hero state, device caption) — take it to near-solid. */
+    --on-img-mute: rgba(246, 242, 234, 0.92);
+  }
+  [data-theme="dark"] {
+    --hair:        rgba(241, 236, 227, 0.38);
+    --hair-soft:   rgba(241, 236, 227, 0.22);
+    --ink-soft:    #E8E2D8;
+    --ink-mute:    #BDB6A8;
+    --on-img-mute: rgba(246, 242, 234, 0.92);
+  }
+  :focus-visible { outline-width: 3px; }
+  .btn { border-color: var(--ink-mute); }
 }
 
 /* ============================================================
@@ -958,7 +1014,8 @@ html.motion .nav-toggle.is-flip svg {
   width: 44px; height: 44px; padding: 0;
   border: var(--hair-w) solid var(--hair); border-radius: 999px;
   background: transparent; color: var(--ink-soft); cursor: pointer;
-  transition: background 240ms ease, color 200ms ease, border-color 240ms ease;
+  transition: background 240ms ease, color 200ms ease, border-color 240ms ease,
+              scale 280ms cubic-bezier(.22,1,.36,1);
 }
 .booker__close:hover { background: var(--bleed); color: var(--ink); border-color: var(--accent-warm); }
 .booker__close svg { width: 20px; height: 20px; }
@@ -997,10 +1054,13 @@ html.motion .nav-toggle.is-flip svg {
   transition: border-color 220ms ease, background 220ms ease, box-shadow 220ms ease;
 }
 .booker__input::placeholder { color: var(--ink-mute); opacity: 0.8; }
-.booker__input:focus {
+/* :focus-visible, not :focus — a mouse click into a field should not raise a
+   ring. The halo uses --bleed-on rather than --bleed: at 0.18 alpha over
+   --surface-2 the old ring was too faint to read as focus. */
+.booker__input:focus-visible {
   outline: none;
   border-color: var(--accent-warm);
-  box-shadow: 0 0 0 3px var(--bleed);
+  box-shadow: 0 0 0 3px var(--bleed-on);
 }
 /* Native invalid styling only after a submit attempt (booker.ts adds .was-validated). */
 .booker__form.was-validated .booker__input:invalid {

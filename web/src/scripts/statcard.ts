@@ -12,10 +12,13 @@
 
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-/* Under the motion layer, reveal.ts fades the card itself into the hero
- * entrance (landing ≈1.3s in); hold the count/draw until then so they read
- * on-screen rather than playing inside an invisible card. */
-const motionDelay = document.documentElement.classList.contains('motion') ? 1050 : 0;
+/* Hold the count/draw until the card has finished arriving, so they read
+ * on-screen rather than playing inside an element still fading in. The hero
+ * entrance is CSS, not reveal.ts: .statcard animates `hero-in` at 700ms with a
+ * 60ms delay (os-site.css), so it has landed at 760ms. Keep this in step with
+ * those two values — it used to say 1050 for a reveal.ts timing that no longer
+ * exists, which left ~290ms of dead air on an LCP element. */
+const motionDelay = document.documentElement.classList.contains('motion') ? 760 : 0;
 
 function decimalsOf(s: string): number {
   const dot = s.indexOf('.');
