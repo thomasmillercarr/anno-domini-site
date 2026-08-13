@@ -107,32 +107,56 @@ palette, so theming holds:
 ## The hero backdrop is generated, not photographed
 
 The hero is **not an image**. `.hero__slot` is a `<canvas>` painted by
-[`scripts/herofield.ts`](web/src/scripts/herofield.ts): one fullscreen quad, one WebGL2 fragment
-shader, rendered at the display's own resolution. It replaced a 2675×1506 WebP that visibly blurred
-on any display wider than its own pixel count. There is no hero image, no `site.hero.image`, and no
-hero preload in `Base.astro` — do not reintroduce them.
+[`scripts/herofield.ts`](web/src/scripts/herofield.ts) — **five passes, three programs**, rendered at
+the display's own resolution. It replaced a 2675×1506 WebP that visibly blurred on any display wider
+than its own pixel count. There is no hero image, no `site.hero.image`, and no hero preload in
+`Base.astro` — do not reintroduce them.
+
+The pipeline is: **A** field → `sceneTex` in linear HDR (alpha carries the contrast guard); **B/C**
+bright-pass + separable blur at ¼; **D** second octave at ⅛; **E** composite, tonemap, grain, sRGB.
 
 Things to know before editing it:
 
+- **Everything accumulates in LINEAR light**, and the palette constants in the shader are already
+  raised to 2.2. Never paste sRGB values into them. Accumulating in gamma space is what makes bright
+  areas go chalky grey instead of hot, and it is a physical error, not a matter of taste.
+- **The tonemap is a highlight-only shoulder, deliberately not ACES.** ACES desaturates and pulls
+  midtones down, and the midtones here are exactly what the type contrast is measured against.
+  Everything in the background ramp sits below the shoulder and passes through untouched.
 - **Contrast is load-bearing.** The headline, sub-label and CTA are light type over this, under
-  `.hero__veil`. The shader's `guard` term and lower-left fog bank exist to keep that legible, and the
-  palette anchors (`SKY` / `CORE` / `FOG`) are sampled from the photograph it replaced so the type
-  contrast did not regress. Measured against that baseline: sub 2.41:1 (was 2.26), h1 4.91:1 (was
-  4.53), CTA 6.16:1 (was 6.22). Lighten any of it and you are trading away legibility. Note
-  `test-contrast.mjs` does **not** cover this — it only checks token pairs.
-- **Filaments are iso-lines of a warped *coordinate*, not of the noise.** Iso-lines of isotropic fbm
-  are closed loops and read as a contour map. Strand width is set from `fwidth()` so it stays fixed in
-  screen pixels at any DPR — that is what keeps it sharp, and why harmonics fade out past Nyquist.
+  `.hero__veil`. `CORE` and `FOG` are set by measurement, not by eye. Because contrast is a function of
+  *mean* luminance and the strands are thin, the fog wash on the base is pushed hard while the guard on
+  the strands is kept light — suppressing the strands instead just empties the left of the frame.
+  Current worst-case, measured across frames: sub 2.57:1, h1 4.98:1, CTA 6.33:1, statcard 2.29:1.
+  `test-contrast.mjs` does **not** cover any of this — it only checks token pairs. The method is:
+  inject CSS making the hero type transparent, screenshot several frames, measure the backdrop under
+  each type rect with `sharp`, take the worst. The travelling pulses move light around, so a
+  single-frame reading is not trustworthy.
+- **Filaments are iso-lines of a warped *coordinate*, not of the noise**, and the y slope (7.0) must
+  stay well above the warp amplitude (~±1.5). Comparable values put extrema through the field, and an
+  extremum in a coordinate whose iso-lines you are drawing is a closed contour — it reads as wood grain.
+- **Node bursts are drawn in angle space, not squeezed out of the flow.** A scalar field whose
+  iso-lines radiate from a point must have a critical point there, and that critical point is a ring —
+  bending the flow radially always produces a tree-knot artefact at the radius where the bend cancels
+  the slope. Angle-space rays have no such constraint and stay continuous across the atan seam because
+  the ray count (26) is an integer.
+- **Per-strand identity is what stops it reading as a contour map.** Each strand hashes brightness (a
+  cubic tail: a few hot, most faint), width and temperature off `floor(v)`.
+- **Hashes are sin-free on purpose.** At ~58 hashes per pixel the transcendental version was the
+  difference between holding 60fps and the ladder degrading resolution.
 - **It runs off `gsap.ticker`**, which `scroll.ts` already drives in lockstep with Lenis. Do not open a
   second rAF loop; one clock is what keeps it feeling attached to the smooth scroll.
 - **The canvas must never set its own transform** — `reveal.ts` scrubs `yPercent` on `.hero__slot` for
   the scroll parallax and the two would fight.
 - **Fallbacks**: no WebGL2, or a lost context, drops to the CSS gradient on `.hero`, which is built
-  from the same palette and is a complete design on its own. Reduced motion renders exactly one frame
-  (and takes `preserveDrawingBuffer`, without which that frame vanishes on the next re-raster).
-- The resolution ladder only ever steps **down**, on frames slower than 24ms. Keep that threshold well
-  clear of the 16.7ms a healthy 60fps frame takes, or it walks straight to the lowest resolution and
-  reintroduces the blur this replaced.
+  from the same palette and is a complete design on its own. Without `EXT_color_buffer_float` the
+  targets fall back to `RGBA8` with the range packed into them. Reduced motion renders exactly one
+  frame (and takes `preserveDrawingBuffer`, without which that frame vanishes on the next re-raster).
+- **Two perf governors.** A pixel budget (`MAX_PIXELS`, 3.0e6) caps total work — measured, because this
+  shader runs ~22ms/frame at 4.2 megapixels, and a deliberate 0.85 scale beats the ladder reacting its
+  way down to 0.75. On a 1× display the cap never binds. The frame-time ladder is the backstop: it only
+  steps **down**, on frames over 24ms, and it ignores the first 90 frames — a load-time burst would
+  otherwise permanently degrade the render. Keep 24ms clear of the 16.7ms a healthy frame takes.
 
 ## ⚠ Outstanding before launch — privacy policy
 
