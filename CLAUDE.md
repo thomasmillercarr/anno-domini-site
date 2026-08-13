@@ -39,7 +39,7 @@ config.
   footer-linked and sharing `Base.astro` + the Booker panel (still a draft — see pre-launch note below).
 - [`layouts/Base.astro`](web/src/layouts/Base.astro) — `<html>`/`<head>` shell: meta/OG/canonical, a
   **font preload** for the subset Archivo woff2 (self-hosted, so there is no preconnect), a
-  conditional hero-image preload, a **no-FOUC inline script** (restores `localStorage['os-theme']` and
+  **no-FOUC inline script** (restores `localStorage['os-theme']` and
   sets `html.motion` before paint — this is the single gate for the whole motion layer), and the
   client scripts, deferred to `requestIdleCallback`.
 - [`data/site.ts`](web/src/data/site.ts) — **single source of truth for all copy.** Every component
@@ -53,9 +53,10 @@ config.
   persisted to `os-theme`, **plus the nav `.scrolled` / `.on-hero` states**, driven by two
   `IntersectionObserver` sentinels rather than a scroll listener), `scroll.ts` (Lenis smooth scroll and
   smooth in-page anchors; exposes `window.__lenis` for scroll-lock), `statcard.ts` (hero stat counter),
-  `pointer.ts` (magnetic cursor / parallax), `reveal.ts` (scroll-linked entrance choreography, gated on
-  `html.motion`), `booker.ts` (the GSAP-Flip contact panel + Web3Forms submit). See the motion-layer
-  notes for the `html.motion` gating pattern.
+  `pointer.ts` (magnetic cursor / parallax; also exports the shared `rafThrottle`), `reveal.ts`
+  (scroll-linked entrance choreography, gated on `html.motion`), `herofield.ts` (the generated hero
+  backdrop — see below), `booker.ts` (the GSAP-Flip contact panel + Web3Forms submit). See the
+  motion-layer notes for the `html.motion` gating pattern.
 - `components/` — one `.astro` per section, each importing `site` for its copy.
 
 ## Content lives in `site.ts`
@@ -96,12 +97,42 @@ palette, so theming holds:
   `Base.astro`, no third-party round-trip). The design leans hard on variable-font axes —
   `font-variation-settings` sets width (`wdth` 62–125) and weight (`wght`) per type role (`.display`,
   `.display-xl`, `.label`, `.body`, `.lede`, etc.). Preserve the exact axis values; they carry the brand.
-- **Frosted glass** (`.frost`, `.btn`) uses `backdrop-filter: blur(...)` over photographic backgrounds.
-  The `--frost-*` tokens and `--on-img` / `--on-img-mute` (light type over photos) are central to the look.
+- **Frosted glass** (`.frost`, `.btn`) uses `backdrop-filter: blur(...)` over the imagery behind it.
+  The `--frost-*` tokens and `--on-img` / `--on-img-mute` (light type over imagery) are central to the look.
 - **Rhythm**: `--pad-x`, `--band`, `--maxw` plus `clamp()` everywhere drive fluid sizing. Layout
   helpers: `.wrap` (horizontal padding), `.band` (vertical section padding), `.inner` (max width +
   centering). Breakpoints at 1080px, 820px, 540px.
 - **Hairlines**: `--hair` / `--hair-soft` at `--hair-w` (1px).
+
+## The hero backdrop is generated, not photographed
+
+The hero is **not an image**. `.hero__slot` is a `<canvas>` painted by
+[`scripts/herofield.ts`](web/src/scripts/herofield.ts): one fullscreen quad, one WebGL2 fragment
+shader, rendered at the display's own resolution. It replaced a 2675×1506 WebP that visibly blurred
+on any display wider than its own pixel count. There is no hero image, no `site.hero.image`, and no
+hero preload in `Base.astro` — do not reintroduce them.
+
+Things to know before editing it:
+
+- **Contrast is load-bearing.** The headline, sub-label and CTA are light type over this, under
+  `.hero__veil`. The shader's `guard` term and lower-left fog bank exist to keep that legible, and the
+  palette anchors (`SKY` / `CORE` / `FOG`) are sampled from the photograph it replaced so the type
+  contrast did not regress. Measured against that baseline: sub 2.41:1 (was 2.26), h1 4.91:1 (was
+  4.53), CTA 6.16:1 (was 6.22). Lighten any of it and you are trading away legibility. Note
+  `test-contrast.mjs` does **not** cover this — it only checks token pairs.
+- **Filaments are iso-lines of a warped *coordinate*, not of the noise.** Iso-lines of isotropic fbm
+  are closed loops and read as a contour map. Strand width is set from `fwidth()` so it stays fixed in
+  screen pixels at any DPR — that is what keeps it sharp, and why harmonics fade out past Nyquist.
+- **It runs off `gsap.ticker`**, which `scroll.ts` already drives in lockstep with Lenis. Do not open a
+  second rAF loop; one clock is what keeps it feeling attached to the smooth scroll.
+- **The canvas must never set its own transform** — `reveal.ts` scrubs `yPercent` on `.hero__slot` for
+  the scroll parallax and the two would fight.
+- **Fallbacks**: no WebGL2, or a lost context, drops to the CSS gradient on `.hero`, which is built
+  from the same palette and is a complete design on its own. Reduced motion renders exactly one frame
+  (and takes `preserveDrawingBuffer`, without which that frame vanishes on the next re-raster).
+- The resolution ladder only ever steps **down**, on frames slower than 24ms. Keep that threshold well
+  clear of the 16.7ms a healthy 60fps frame takes, or it walks straight to the lowest resolution and
+  reintroduces the blur this replaced.
 
 ## ⚠ Outstanding before launch — privacy policy
 
@@ -140,6 +171,8 @@ provenance and assets.
   assets**: the shipped versions are `.webp` in [`web/src/assets/`](web/src/assets/), imported by
   `site.ts` so `astro:assets` can emit width/height and a responsive srcset at build time. Keep this
   folder as the source provenance only. (`web/public/assets/` now holds just `og.jpg`, referenced by
-  `Base.astro` for the social card — everything else moved out of `public/`.)
+  `Base.astro` for the social card — everything else moved out of `public/`.) The **hero** is the
+  exception: it is no longer an image at all in either place, only `project/assets/` provenance —
+  see "The hero backdrop is generated" above.
 - **`project/uploads/` and `project/screenshots/`** — design-process scratch (user uploads, scan/fix/v2/v3
   iteration shots). Not part of the site; ignore unless referenced.

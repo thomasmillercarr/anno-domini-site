@@ -21,8 +21,8 @@ const enabled =
   window.matchMedia('(hover: hover) and (pointer: fine)').matches &&
   !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-/** Coalesce pointermove writes into one rAF tick. */
-function rafThrottle<T extends (...args: never[]) => void>(fn: T): T {
+/** Coalesce pointermove writes into one rAF tick. Shared with herofield.ts. */
+export function rafThrottle<T extends (...args: never[]) => void>(fn: T): T {
   let queued = false;
   let lastArgs: unknown[];
   return ((...args: unknown[]) => {

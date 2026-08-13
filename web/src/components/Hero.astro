@@ -1,5 +1,4 @@
 ---
-import { Image } from 'astro:assets';
 import { site } from '../data/site';
 const { hero } = site;
 
@@ -10,15 +9,11 @@ const leadWords = hero.headlineLead.split(/(\s+)/).filter((p) => p.trim());
 ---
 
 <header class="hero" data-screen-label="Hero">
-  <Image
-    class="hero__slot"
-    src={hero.image}
-    alt={hero.imageAlt}
-    widths={[640, 960, 1280, 1920, 2675]}
-    sizes="100vw"
-    loading="eager"
-    fetchpriority="high"
-  />
+  {/* The backdrop is generated, not photographed — scripts/herofield.ts paints a
+      WebGL filament field here at the display's own resolution. Purely
+      decorative, and .hero carries a CSS gradient underneath that stands alone
+      if WebGL is unavailable, so it is hidden from assistive tech. */}
+  <canvas class="hero__slot" aria-hidden="true"></canvas>
   <div class="hero__veil"></div>
   <div class="hero__grid wrap inner">
     <div>

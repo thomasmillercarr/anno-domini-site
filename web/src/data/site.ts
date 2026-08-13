@@ -17,7 +17,6 @@
 import type { ImageMetadata } from 'astro';
 
 import logoImg from '../assets/anno-domini-logo.png';
-import heroImg from '../assets/hero-anno-1.webp';
 import manifestoImg from '../assets/manifesto-bg.webp';
 import solutionImg from '../assets/solution-bg.webp';
 import proofPipelineImg from '../assets/proof-3-pipeline.webp';
@@ -110,8 +109,8 @@ export const site = {
 
   /* ---- hero ---- */
   hero: {
-    image: heroImg,
-    imageAlt: 'Luminous filaments of light converging into glowing nodes',
+    // No image key: the hero backdrop is generated at runtime by
+    // scripts/herofield.ts, not loaded. See the note in Hero.astro.
     sub: 'Anno Domini · A fractional AI partner, UK',
     // `headlineLead` + emphasised `headlineEm` render as: "… <em>agency.</em>"
     headlineLead: 'Infrastructure that returns ',

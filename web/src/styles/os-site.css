@@ -420,11 +420,29 @@ section { position: relative; }
 /* ============================================================
    HERO
    ============================================================ */
-.hero { position: relative; min-height: 100vh; display: flex; align-items: flex-end; overflow: hidden; }
+/* The hero's own background is the fallback for the generated backdrop: it shows
+   on the first frame, and it stands alone if WebGL is unavailable or the context
+   is lost. Built from the palette tokens so it reads as the same artwork with
+   the filaments turned off, and it is dark enough at the bottom for the veil and
+   the light type to keep working on their own. */
+.hero {
+  position: relative; min-height: 100vh; display: flex; align-items: flex-end; overflow: hidden;
+  background:
+    radial-gradient(120% 74% at 68% 46%, rgba(201, 162, 122, 0.34) 0%, rgba(201, 162, 122, 0) 62%),
+    linear-gradient(to top, #7F7266 0%, #8F8275 14%, #AB8F74 50%, #D5C4AE 82%, #E5D7C7 100%);
+}
 /* every full-bleed background image fills its positioned parent */
-.hero__slot, .manifesto__slot, .device__slot {
+.manifesto__slot, .device__slot {
   position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0;
 }
+/* The hero backdrop is a <canvas> (scripts/herofield.ts), not an <img> — no
+   object-fit, and it fades in over the gradient above once the first frame is
+   painted so there is no pop. */
+.hero__slot {
+  position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0;
+  display: block; opacity: 0; transition: opacity 620ms var(--ease);
+}
+.hero__slot.is-live { opacity: 1; }
 .hero__veil {
   position: absolute; inset: 0; z-index: 1; pointer-events: none;
   background: linear-gradient(to top, rgba(24,18,12,0.56) 0%, rgba(24,18,12,0.18) 42%, rgba(24,18,12,0.04) 72%, rgba(24,18,12,0.10) 100%);
@@ -776,7 +794,7 @@ section { position: relative; }
    real photos replace the design-tool slots; a neutral surface shows
    underneath while they decode
    ============================================================ */
-.hero__slot, .manifesto__slot, .device__slot, .proof__imgs img { background: var(--surface); }
+.manifesto__slot, .device__slot, .proof__imgs img { background: var(--surface); }
 
 /* ============================================================
    RESPONSIVE
@@ -856,13 +874,15 @@ section { position: relative; }
 }
 .hero__h1 .w__i { display: inline-block; }
 
-/* Vertical bleed so the full-bleed photographs can parallax (reveal.ts scrubs
+/* Vertical bleed so the full-bleed backdrops can parallax (reveal.ts scrubs
    yPercent within this ±12%) without exposing their edges. */
-/* 124% = the 12% bleed above plus 12% below. Must be an explicit height, not
-   `height: auto` with top/bottom: these are <img>, and now that astro:assets
-   emits width/height they have an intrinsic aspect ratio, which `auto` resolves
-   against instead of stretching between the offsets — collapsing the hero to
-   ~232px tall. */
+/* 124% = the 12% bleed above plus 12% below. Keep it an explicit height rather
+   than `height: auto` with top/bottom. It is load-bearing for .manifesto__slot,
+   which is an astro:assets image: those carry width/height, so `auto` resolves
+   against the intrinsic aspect ratio instead of stretching between the offsets,
+   collapsing the section to ~232px tall. The hero's canvas has no intrinsic
+   ratio and would survive `auto`, but it shares the rule and the explicit height
+   is what its shader sizes the drawing buffer against. */
 html.motion .hero__slot,
 html.motion .manifesto__slot { top: -12%; bottom: auto; height: 124%; }
 
@@ -936,6 +956,8 @@ html.motion .nav-toggle.is-flip svg {
   /* Statcard: no count-up, draw, or breathing — show the final figure flat. */
   .statcard__line { stroke-dashoffset: 0 !important; transition: none !important; }
   .statcard__dot  { opacity: 1 !important; transition: none !important; animation: none !important; }
+  /* Hero backdrop appears at once — herofield.ts renders a single static frame. */
+  .hero__slot { transition: none !important; }
   /* Cursor-tracking flair off: plain hover only (JS also bails, this is a backstop). */
   .step, .step__num, .step__label, .os-row, .os-row .dot { transition: none !important; transform: none !important; }
   .os-row::before { display: none; }

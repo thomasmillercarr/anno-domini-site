@@ -54,6 +54,7 @@ if (reduceMotion) {
     });
   });
 
-  // Re-measure once late-loading assets (fonts, hero image) settle layout.
+  // Re-measure once late-loading assets (fonts, section images) settle layout.
+  // The hero backdrop is a canvas pinned to inset:0, so it never moves anything.
   window.addEventListener('load', () => ScrollTrigger.refresh());
 }
