@@ -125,10 +125,19 @@ Things to know before editing it:
   Reintroduce the usual `f*f*(3-2f)` and every contour goes back to being a smooth curve. Keep the
   octave count low, too — each extra octave subdivides the facets and enough of them converge back on
   a smooth field.
-- **Three line families at 60°** read the same warped point: one dense dominant family carrying the
-  topographic reading, two lighter ones crossing it. The weight ratio between them is the main dial
-  for how severe this looks. The warp amplitude must stay well under the projection scale `S` —
-  comparable values pile the lines into a scribble.
+- **One line family, three harmonics.** An earlier version drew six — one dominant, two crossing it at
+  60°, and two more in a far layer at another scale — and they collided: lines overlapped and piled up
+  in ways that read as accidental. Everything now reads the same warped coordinate, so nothing can
+  cross anything else. Do not reintroduce a cross-hatch or a second layer.
+- **The coordinate is anisotropic** (`q = vec2(p.x * 0.85, p.y * 7.0)`), and that large y scale is the
+  only reason the contours run horizontally instead of in whatever direction the noise points. The
+  undulation is almost entirely in y for the same reason — displacing x as hard as y brings whorls
+  back. Keep the slope well above the warp amplitude: comparable values put extrema through the field,
+  and every extremum in a coordinate whose iso-lines you are drawing is a closed contour. That bites
+  harder with hard faceted lines than it did with soft ones.
+- **Lattice frequency matters as much as amplitude.** Too coarse and one cell edge spans most of the
+  frame, so every contour kinks on the same vertical line at once and it reads as a seam rather than
+  as faceting.
 - **Everything accumulates in LINEAR light**, and the palette constants are already raised to 2.2.
   Never paste sRGB values into them. The tonemap is a highlight-only shoulder, deliberately not ACES.
 - **Line width is fixed in screen pixels** via `fwidth`, which is what keeps it sharp at any DPR.
@@ -140,7 +149,7 @@ Things to know before editing it:
   Keep `PULL` small: a radial pull competing with the base slope closes an iso-line into a ring at the
   radius where they cancel, which reads as a tree knot around every node.
 - **Contrast is load-bearing**, though the dark ground makes it a far easier position than the bronze
-  one did. Worst case, measured across frames: sub 6.90:1, h1 12.14:1, CTA 11.08:1, statcard 3.31:1.
+  one did. Worst case, measured across frames: sub 6.03:1, h1 10.67:1, CTA 10.61:1, statcard 3.09:1.
   The statcard stays the weakest pairing — its frost is a *light* fill, so it sits as a mid-grey panel
   over the dark ground. `test-contrast.mjs` does **not** cover any of this; it only checks token pairs.
   The method is: inject CSS making the hero type transparent, screenshot several frames, measure each
@@ -154,9 +163,10 @@ Things to know before editing it:
   the scroll parallax and the two would fight.
 - **Reduced motion** renders exactly one frame, and takes `preserveDrawingBuffer` — without it that
   frame vanishes on the next re-raster.
-- **Two perf governors.** `MAX_PIXELS` (5.0e6) caps total work, set from a GPU timer query: this
-  shader costs ~3.07ms per megapixel, so 5.0e6 is the largest buffer that fits a 16.7ms frame with
-  headroom. It binds only at the top end. The frame-time ladder is the backstop and only steps
+- **Two perf governors.** `MAX_PIXELS` (6.0e6) caps total work, set from a GPU timer query: this
+  shader costs ~2.54ms per megapixel, so 6.0e6 is the largest buffer that fits a 16.7ms frame with
+  headroom. Re-measure it if the line families change — six families cost 3.07ms/MP and forced the cap
+  down to 5.0e6, which cost an ultrawide about 10% of its resolution. It binds only at the top end. The frame-time ladder is the backstop and only steps
   **down**, on frames between 24ms and 300ms. Both bounds matter: below 24ms you are marking healthy
   60fps frames as slow, and above 300ms you are not measuring the GPU at all — Chrome throttles
   occluded windows to ~1fps without ever setting `document.hidden`, and without the upper bound the

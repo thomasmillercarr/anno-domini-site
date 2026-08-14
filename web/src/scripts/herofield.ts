@@ -234,50 +234,42 @@ void main() {
   pull += uPointerVel * (exp(-pr2 * 12.0) * uWake) * 0.30;
 
   /* --- the warped plane ---
-     Isotropic on purpose: the three families read the same point, and an
-     anisotropic scale would collapse the two cross-families onto the dominant
-     one. Three octaves, coarse — enough structure to weave, few enough that the
-     facets survive.
+     Anisotropic: the large y scale is what makes iso-lines of q.y run
+     horizontally as combed contours, rather than in whatever direction the noise
+     happens to point. For the same reason the undulation is almost entirely in
+     y — displacing x as hard as y brings the whorls straight back.
 
-     Warp amplitude stays well under the projection scale below. Comparable
-     values pile the lines into a tangle — brutalist means ordered and severe,
-     not chaotic, and the first attempt at this was a scribble. */
-  vec2  base = p * 1.55;
-  float n1 = fbmTri(base * 0.70 + vec2(t, 0.0), 3);
-  float n2 = fbmTri(base * 1.45 + vec2(-t * 0.75, 3.1), 2);
-  vec2  qq = base + vec2(n2 * 0.20, n1 * 0.52) + pull;
+     The slope has to stay well above the warp amplitude. Comparable values put
+     extrema all through the field, and every extremum in a coordinate whose
+     iso-lines you are drawing is a closed contour. That constraint bites harder
+     here than it did when the lines were soft: a loop drawn in hard faceted
+     segments is far more conspicuous than one drawn in smooth curves.
 
-  /* --- three families, 60 degrees apart ---
-     Same projection scale for all three, so the weave is a regular triangular
-     lattice; the dominant family is separated by frequency and weight rather
-     than by geometry, which keeps the topographic reading without turning the
-     cross-hatch into graph paper. */
-  const float S = 3.0;
-  float fA = dot(qq, vec2( 0.000, 1.000)) * S;
-  float fB = dot(qq, vec2( 0.866, 0.500)) * S;
-  float fC = dot(qq, vec2(-0.866, 0.500)) * S;
+     Three octaves, coarse. Each extra octave subdivides the facets, and enough
+     of them converge back on a smooth field.
 
-  // Along-line coordinates: perpendicular to each family's normal.
-  float aA = dot(qq, vec2( 1.000, 0.000)) * 2.6 - uTime * 0.34;
-  float aB = dot(qq, vec2( 0.500, -0.866)) * 2.6 - uTime * 0.27;
-  float aC = dot(qq, vec2( 0.500,  0.866)) * 2.6 - uTime * 0.22;
+     Lattice frequency matters as much as amplitude. Too coarse and a single cell
+     edge spans most of the frame, so every contour kinks on the same vertical
+     line at once and it reads as a seam rather than as faceting. Smaller cells
+     scatter those kinks. */
+  vec2  q  = vec2(p.x * 0.85, p.y * 7.0);
+  float u1 = fbmTri(vec2(q.x * 1.15, q.y * 0.27) + vec2(t, 0.0), 3);
+  float u2 = fbmTri(vec2(q.x * 2.40, q.y * 0.46) + vec2(-t * 0.8, 3.1), 2);
+  q.y += 3.60 * u1 + 1.15 * u2;
+  q.x += 0.14 * u2;
+  q += pull;
 
-  /* Near layer: dense, bright, and the one carrying the topographic reading. */
-  vec3 rad = lineFam(fA * 11.0,        1.05,  3.0, aA, 0.16) * 1.00
-           + lineFam(fA * 22.0 + 0.37, 0.80,  7.0, aA, 0.24) * 0.40
-           + lineFam(fB *  6.5,        0.95, 41.0, aB, 0.32) * 0.26
-           + lineFam(fC *  6.5 + 0.53, 0.95, 59.0, aC, 0.32) * 0.26;
-
-  /* Far layer: the same three families offset and slower, dimmer rather than
-     hazier — with only two tones there is no colour left to fade them into, so
-     depth has to come from brightness and density. */
-  vec2  qf = qq * 1.62 + vec2(uTime * 0.010, 0.47);
-  float gA = dot(qf, vec2( 0.000, 1.000)) * S;
-  float gB = dot(qf, vec2( 0.866, 0.500)) * S;
-  float bA = dot(qf, vec2( 1.000, 0.000)) * 2.6 - uTime * 0.18;
-  float bB = dot(qf, vec2( 0.500, -0.866)) * 2.6 - uTime * 0.15;
-  rad += (lineFam(gA * 13.0, 0.80, 83.0, bA, 0.26)
-        + lineFam(gB *  8.0, 0.80, 89.0, bB, 0.34) * 0.50) * 0.17;
+  /* --- ONE family, three harmonics, coarse to fine ---
+     No cross-hatch, no second layer. An earlier version drew six families — one
+     dominant, two crossing it at 60 degrees, and two more in a far layer at a
+     different scale — and they collided: lines overlapped and piled up in ways
+     that read as accidental rather than designed. Everything here reads the same
+     warped coordinate, so nothing can cross anything else. */
+  float field = q.y;
+  float along = q.x * 4.0 - uTime * 0.34;
+  vec3 rad = lineFam(field * 11.0 - 0.21, 1.15,  3.0, along, 0.14) * 0.72
+           + lineFam(field * 22.0,        0.95,  7.0, along, 0.20) * 1.00
+           + lineFam(field * 44.0 + 0.37, 0.80, 13.0, along, 0.28) * 0.34;
 
   /* --- landscape band: the mass sits in a wavy horizontal belt --- */
   float hz   = 0.58 + 0.09 * fbmTri(vec2(p.x * 1.3 + uTime * 0.011, 3.7), 2);
@@ -382,13 +374,14 @@ function init(): void {
      ponytail: fixed steps, not a real adaptive controller. Ceiling: it only ever
      steps down, never recovers if the machine frees up. A rolling window that
      also steps back up is the upgrade if that ever shows. */
-  /* Measured with a GPU timer query, not guessed: this shader costs ~3.07ms per
-     megapixel on the machine it was built on, so 5.0e6 is the largest buffer
-     that still fits inside a 16.7ms frame with headroom. It binds only at the
-     top end — a 1x desktop never reaches it, a phone at 3x still gets the full
-     2x cap, and a 3440-wide ultrawide lands at ~0.90 rather than having the
-     ladder react its way down. */
-  const MAX_PIXELS = 5.0e6;
+  /* Measured with a GPU timer query, not guessed: ~2.54ms per megapixel on the
+     machine this was built on, so 6.0e6 is the largest buffer that still fits
+     inside a 16.7ms frame with headroom. Dropping from six line families to one
+     bought this back — at 3.07ms/MP the cap had to sit at 5.0e6, which cost a
+     3440-wide ultrawide about 10% of its resolution. It now renders essentially
+     1:1, which was the point of the whole exercise. Still only binds at the top
+     end: a 1x desktop never reaches it and a phone at 3x keeps the full 2x cap. */
+  const MAX_PIXELS = 6.0e6;
   const dpr = window.devicePixelRatio || 1;
   const STEPS = [...new Set([2, 1.5, 1, 0.75].map((s) => Math.min(dpr, s)))];
   let step = 0;
