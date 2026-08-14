@@ -11,25 +11,36 @@
  *
  * ---- what this draws ----
  *
- * A faceted line field on a two-tone terminal palette. Angular, high contrast,
- * minimal tonal range: ASCII as a discipline rather than as literal glyphs.
+ * An ASCII terrain: a layered mountain silhouette rendered as marks on a
+ * character grid, on a two-tone terminal palette.
  *
- *   1. A piecewise-LINEAR triangular-lattice noise warps the plane. The linear
- *      interpolation is the whole trick — smoothing the lattice is what makes
- *      contours curve, so leaving the barycentric weights alone gives a field
- *      that is planar inside every triangle, and iso-lines of a planar field are
- *      straight segments that kink only on lattice edges. Faceted contours, with
- *      a triangular substructure, for free and cheaper than the smooth version.
- *   2. Three line families read that warped plane: a dense dominant one running
- *      topographically, plus two lighter ones at 60 degrees to it, so the field
- *      weaves into triangles where they cross.
- *   3. Line width is fixed in SCREEN PIXELS via fwidth, which is what keeps it
- *      sharp at any DPR. Harmonics fade out past Nyquist rather than aliasing —
- *      the one place softness is load-bearing, since hard lines moire viciously.
- *   4. Light travels along the lines. Each line hashes its own brightness, width
- *      and pulse phase, and some run dashed, so the families are never uniform.
- *   5. Nodes are places the lines crowd toward. They are drawn, never lit, and
- *      they wander — there is no bloom anywhere in this shader.
+ *   1. A CHARACTER GRID with a constant row count. Everything that decides what
+ *      to draw is evaluated at the CELL CENTRE, never at the fragment, and that
+ *      single substitution is what makes this read as character art rather than
+ *      as a topographic map. Constant rows rather than a constant cell size in
+ *      pixels means a larger display draws the same composition more sharply
+ *      instead of drawing more and smaller marks, which is the whole point here.
+ *   2. FOUR DEPTH RANGES. Each skyline comes from the same piecewise-LINEAR
+ *      triangular-lattice noise the flow does, so the silhouette is faceted; the
+ *      nearest range whose skyline sits above a cell claims it, and that early
+ *      exit is the occlusion. Ranges further back sit higher, flatter, fainter.
+ *      A cell above every skyline is sky.
+ *   3. ONE MARK PER CELL: a capsule in cell-local device pixels, oriented along
+ *      the flow and quantised to a handful of angles. Its length carries the
+ *      local density, and at length zero it degenerates to the empty-cell dot —
+ *      one primitive for the whole vocabulary, no branch, no threshold.
+ *   4. Light travels the field. Each cell hashes its own brightness on a cubic
+ *      tail and its own pulse phase, and each range is offset so the wave never
+ *      sweeps all four in unison.
+ *   5. Nodes are radial fans the marks turn to follow. They are drawn, never
+ *      lit — there is no bloom anywhere in this shader.
+ *
+ * Oriented marks cannot close into a loop, and that lifts the constraint which
+ * shaped every earlier version of this file: an extremum in a coordinate whose
+ * iso-lines you draw IS a closed contour, so node strength had to stay tiny and
+ * the anisotropy enormous to keep rings out of the frame. Nothing draws a scalar
+ * field any more, so the fans can be as strong as the reference shows and the
+ * flow is free to swirl.
  *
  * ---- one pass ----
  *
@@ -75,38 +86,58 @@ uniform float uWake;        // decaying wake strength
 
 out vec4 fragColor;
 
+const float PI = 3.14159265;
+
 /* Palette, LINEAR — the sRGB values in the comments are the authored colours,
    these are those raised to 2.2. Every mix below happens in linear light, so
    never paste sRGB values in here.
 
    Two tones and almost nothing between them. GROUND is a near-flat dark warm,
-   PHOSPHOR is the single line colour: an amber sitting between --timber and
-   --accent-warm, deliberately NOT the near-white of --on-img so the lines never
+   PHOSPHOR is the single mark colour: an amber sitting between --timber and
+   --accent-warm, deliberately NOT the near-white of --on-img so the marks never
    compete with the headline sitting on top of them. */
 const vec3 GROUND_L = vec3(0.0094, 0.0066, 0.0040); /* #1A1611 */
 const vec3 LIFT_L   = vec3(0.0330, 0.0250, 0.0165); /* #302820, top of frame  */
-const vec3 PHOS_L   = vec3(0.8126, 0.4884, 0.2120); /* #E8B87E, the line tone */
+const vec3 PHOS_L   = vec3(0.8126, 0.4884, 0.2120); /* #E8B87E, the mark tone */
 
-/* Convergence nodes: xy anchor, z = strength. The lines crowd and bend toward
-   these; nothing glows. Each wanders on its own slow orbit so none of them sit
-   in a fixed spot. The bottom-left stays deliberately empty: the headline is
-   there. */
+/* The character grid. A CONSTANT ROW COUNT, not a constant cell size in pixels:
+   a larger display then draws the same composition more sharply rather than
+   drawing more and smaller marks, so the layout stops depending on the display
+   at all. ASPECT is the terminal cell ratio, taller than it is wide.
+
+   COLS is the floor that keeps that honest on a portrait phone. Rows alone set
+   the cell from the height, and on a tall narrow canvas that leaves about fifty
+   columns — coarse enough that the marks stop reading as text and start reading
+   as tiles. Taking whichever of the two gives the smaller cell means the grid
+   stays fine in both directions, and on any landscape frame the row count still
+   binds, so the desktop composition is untouched. */
+const float ROWS   = 72.0;
+const float COLS   = 78.0;
+const float ASPECT = 0.55;
+
+/* Orientations are quantised, which is most of why this reads as character art.
+   A stroke is symmetric under 180 degrees, so the quantiser runs over PI, and
+   SEG = 8 gives 22.5 degree steps. SEG = 4 is the literal dash/slash/pipe set
+   and reads more like a terminal, but larger steps pop harder as the field
+   turns, and it turns continuously. */
+const float SEG = 8.0;
+
+/* Depth ranges, nearest first. */
+const int LAYERS = 4;
+
+/* Burst nodes: xy anchor, z = strength. Marks turn to fan radially out of these;
+   nothing glows. Each wanders on its own slow path so none of them sit still.
+   They sit on and above the skyline, and the bottom-left stays deliberately
+   empty: the headline is there. */
 const int NODES = 6;
 const vec3 NODE[6] = vec3[6](
-  vec3(-0.72,  0.14, 0.70),
-  vec3(-0.31,  0.05, 0.55),
-  vec3( 0.06,  0.19, 0.60),
-  vec3( 0.38,  0.02, 0.52),
-  vec3( 0.66,  0.16, 0.85),
-  vec3( 0.95, -0.03, 0.75)
+  vec3(-0.68, 0.02, 0.65),
+  vec3(-0.30, 0.13, 0.50),
+  vec3( 0.03, 0.00, 0.70),
+  vec3( 0.34, 0.15, 0.55),
+  vec3( 0.60, 0.04, 0.85),
+  vec3( 0.79, 0.17, 0.60)
 );
-
-float hash11(float p) {
-  p = fract(p * 0.1031);
-  p *= p + 33.33;
-  p *= p + p;
-  return fract(p);
-}
 
 float hash21(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -146,39 +177,27 @@ float fbmTri(vec2 p, int oct) {
   return s;
 }
 
-/* One line family harmonic, returning linear radiance.
+/* The skyline of one range, in canvas uv-y.
  *
- * Half-width is fwidth(v) * px, i.e. fixed in screen pixels whatever the
- * resolution. Above Nyquist the harmonic fades rather than drawing, because a
- * period narrower than ~2px carries no detail, only moire — and hard-edged lines
- * moire far more viciously than soft ones, so this fade is doing more work here
- * than it was when the field was atmospheric.
+ * Ranges further back sit higher AND swing harder. That ordering is the one that
+ * matters and it is easy to get backwards: aerial perspective says distant
+ * things are fainter, not that they are flatter, and the range that meets the
+ * sky is the one whose profile the eye reads as the silhouette. Give the back
+ * ranges the small amplitude and the skyline goes flat, the frame loses its
+ * drama, and no amount of tuning below will put it back.
  *
- * Each line hashes its own identity off floor(v), constant across the line's
- * whole period so it stays stable: brightness on a cubic tail, a width jitter, a
- * pulse phase, and for some of them a dash pattern. Uniform lines are what made
- * an earlier version read as a contour map.
- */
-vec3 lineFam(float v, float basePx, float seed, float along, float dashOdds) {
-  float g  = abs(fract(v) - 0.5);
-  float aa = fwidth(v);
-  float h  = hash11(floor(v) + seed);
-  float px = basePx * (0.80 + 0.45 * fract(h * 17.0));
-  // Hard profile: essentially a step, with only the ~1px the AA needs.
-  float line = (1.0 - smoothstep(0.0, aa * px, g)) * (1.0 - smoothstep(0.22, 0.48, aa));
-  if (line <= 0.0) return vec3(0.0);
-
-  // Some lines run broken. Hard edges, no fade — this is the ASCII part.
-  float dash = 1.0;
-  if (fract(h * 91.0) < dashOdds) {
-    dash = step(0.34, fract(along * 0.22 + h * 7.0));
-  }
-
-  float bright = 0.30 + 1.30 * h * h * h; // cubic tail: a few hot, most faint
-  // Light running the length of the line, each with its own phase so the pulses
-  // scatter instead of crossing the frame as one wall.
-  float pulse = 0.55 + 2.10 * smoothstep(0.62, 0.98, sin(along + h * 39.0) * 0.5 + 0.5);
-  return PHOS_L * (line * dash * bright * pulse);
+ * The bases are spaced tighter than the amplitudes, so the profiles interleave:
+ * a far peak pushes up between two nearer ones and the nearer range shows
+ * through wherever it dips, which is where the depth comes from.
+ *
+ * The profile is fbmTri, so the silhouette is faceted the same way the flow is,
+ * and each range drifts at its own rate so the skyline never locks into one
+ * shape. This is called once per range in the ownership walk and once more for
+ * the slope, so keep it cheap — two octaves is the budget. */
+float ridge(float x, float lay, float t) {
+  float amp = 0.10 + lay * 0.075;
+  return 0.395 + lay * 0.070
+       + amp * fbmTri(vec2(x * (2.40 + lay * 0.55) + t * (1.4 - lay * 0.25), lay * 5.7 + 2.3), 2);
 }
 
 /* Highlight-only shoulder. Identity below K, then a smooth C1 roll to 1.0.
@@ -197,100 +216,213 @@ float hash12(vec2 p) {
 }
 
 void main() {
-  /* Field coords: y in [-0.5, 0.5], x scaled by aspect. Resolution-independent,
-     so the composition holds from a phone to an ultrawide. */
-  vec2  p     = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
-  float uvy   = gl_FragCoord.y / uRes.y;
   float halfW = 0.5 * uRes.x / uRes.y;
   float t     = uTime * 0.045;
+  float uvy   = gl_FragCoord.y / uRes.y;
 
-  /* --- nodes: attraction only, no light ---
-     Keep PULL small. A radial pull competing with the base slope closes an
-     iso-line into a ring at the radius where the two cancel; at this strength
-     that lands within a few pixels of the centre instead of drawing a tree knot
-     around every node, which is what a larger value did. */
-  const float PULL = 0.20;
-  const float NODE_CULL = 0.30;
-  vec2 pull = vec2(0.0);
+  /* --- the character grid ---
+     Everything that decides WHAT to draw is evaluated at the cell centre, never
+     at the fragment. That one substitution is the quantisation, and it is what
+     separates character art from a swept field. Only the ground gradient and the
+     grain read the fragment, because both want to stay smooth across a cell. */
+  float cellH = min(uRes.y / ROWS, uRes.x / (ASPECT * COLS));
+  vec2  cell  = vec2(cellH * ASPECT, cellH);
+  vec2  ci    = floor(gl_FragCoord.xy / cell);
+  vec2  cf    = fract(gl_FragCoord.xy / cell) - 0.5;
+  vec2  cpx   = (ci + 0.5) * cell;
+  /* Cell centre in field coords: y in [-0.5, 0.5], x scaled by aspect. */
+  vec2  pc    = (cpx - 0.5 * uRes) / uRes.y;
+  float uvyc  = cpx.y / uRes.y;
+
+  /* --- which range owns this cell ---
+     Walk front to back and stop at the first skyline sitting above the cell. The
+     early exit IS the occlusion: a range behind a nearer one never gets the
+     chance to claim the cell, so the silhouettes stack into real depth for
+     nothing. A cell above every skyline is sky, and draws only its empty dot. */
+  float lay = -1.0;
+  float h   = 0.0;
+  for (int i = 0; i < LAYERS; i++) {
+    float fi = float(i);
+    float hi = ridge(pc.x, fi, t);
+    if (uvyc < hi) { lay = fi; h = hi; break; }
+  }
+
+  /* Per-cell identity, stable because it hashes the cell index. */
+  float hb  = hash12(ci + 0.5);
+  float jit = fract(hb * 17.0);
+
+  vec2  dir  = vec2(1.0, 0.0);
+  float dens = 0.0;
+
+  if (lay >= 0.0) {
+    /* --- flow direction ---
+       Marks run parallel to the range silhouette, so a slope reads as a slope,
+       and swing off a noise field on top of that so the flow is organic rather
+       than a set of parallel rules.
+
+       This is an ANGLE field, not the gradient of a scalar one. Nothing draws a
+       scalar field any more, only marks, so there is no reason to build one and
+       differentiate it: a direct angle costs a single fbm where a gradient costs
+       three taps of one, and the angle is quantised immediately afterwards so
+       the extra precision would have been thrown away regardless. */
+    const float E = 0.006;
+    float slope = (ridge(pc.x + E, lay, t) - h) / E;
+    float depth = max(h - uvyc, 0.0);
+    /* Three octaves, and the third is not optional however much it looks like
+       cheap detail under a 22.5 degree quantiser. It contributes roughly plus or
+       minus 11 degrees, which straddles a quantisation step, so it is precisely
+       what scatters neighbouring cells into adjacent bins. Drop it and the marks
+       comb into long uniform ribbons: smoother, cheaper, and no longer terrain.
+       It costs about 10% of the frame and it is worth it. */
+    float n = fbmTri(vec2(pc.x * 1.45 + t * 1.6, depth * 3.2 + lay * 6.1), 3);
+    /* Both the silhouette slope and the swing fall away with depth into the
+       flank, so marks hug the skyline where they meet it and settle toward long
+       horizontal runs far below it — which is what the foreground is. */
+    float hug = exp(-depth * 2.6);
+    float a = atan(slope) * hug + (0.42 + 2.55 * hug) * n;
+    dir = vec2(cos(a), sin(a));
+
+    /* --- density ---
+       A TIGHT bright edge immediately under the skyline over a much softer body.
+       The two terms are what make the depth legible: a range reads as a distinct
+       plane because its crest is a hard line against the fainter flank of the
+       range behind it, not because the silhouettes differ. One smooth falloff
+       instead of two blurs every boundary and the whole set collapses back into
+       a single wash.
+
+       The nearest range also keeps a foreground floor, biased to the right. That
+       is where the long horizontal runs come from, and biasing it is what keeps
+       the lower-left open for the headline — shaping the composition around the
+       type rather than leaning on the contrast guard to claw it back. */
+    float edge  = 1.0 - smoothstep(0.0, 3.2 / ROWS, depth);
+    float flank = 0.62 * exp(-depth * 1.4);
+    float fore  = 0.46 * smoothstep(-0.30, 0.70, pc.x / halfW) * step(lay, 0.5);
+    /* The silhouette line recedes far less than the body it encloses. That is
+       how landscape line-work reads depth: every ridge stays drawn, while the
+       mass behind each one drops away. Fading both together washes the four
+       ranges into one band, because a back crest then matches a front flank. */
+    float fade = exp(-lay * 0.26);
+    dens = max(edge * (0.55 + 0.45 * fade), max(flank, fore) * fade);
+  }
+
+  /* --- bursts: direction and density, never light ---
+     A radial fan used to be the hardest thing in this shader. Iso-lines cannot
+     radiate from a point without a critical point there, and that critical point
+     draws as a ring, which is why node strength was capped at 0.20 and why an
+     earlier version had to build its rays in angle space. Marks have no such
+     constraint, so this is simply the direction they point. */
+  const float BURST = 1.30;
+  float bw = 0.0;
+  vec2  bd = vec2(0.0);
   for (int i = 0; i < NODES; i++) {
     float fi = float(i);
     // Wandering, not orbiting: two incommensurate rates per axis so the path
     // never closes and no node sits still.
-    vec2 c = NODE[i].xy + vec2(
+    /* Anchors are authored against a 16:9 half-width and rescaled to whatever
+       this frame actually is. Left in absolute field coords they do not travel:
+       a portrait phone sees only x within about +/-0.23, so five of the six fall
+       outside the frame and the sixth sits dead centre, directly behind the
+       headline. */
+    vec2 c = vec2(NODE[i].x * halfW / 0.889, NODE[i].y) + vec2(
       0.085 * sin(uTime * 0.061 + fi * 1.7) + 0.045 * sin(uTime * 0.023 + fi * 4.1),
       0.055 * cos(uTime * 0.048 + fi * 2.3) + 0.030 * cos(uTime * 0.019 + fi * 0.7)
     );
-    vec2  d  = p - c;
-    float r2 = dot(d, d);
-    if (r2 > NODE_CULL) continue;
-    pull -= (d / (sqrt(r2) + 0.03)) * exp(-r2 * 7.0) * NODE[i].z * PULL;
+    vec2  dd = pc - c;
+    float r2 = dot(dd, dd);
+    /* Tight. A fan wide enough to be seen from across the frame is a fan that
+       overlaps its neighbours, and six overlapping fans are just noise. */
+    if (r2 > 0.11) continue;
+    float w = exp(-r2 * 42.0) * NODE[i].z;
+    bd += normalize(dd + vec2(1e-5)) * w;
+    bw += w;
   }
 
-  /* --- pointer: an inward bend plus a wake along its recent direction --- */
-  vec2  pd   = p - uPointer;
-  float pr2  = dot(pd, pd);
-  float pAmt = exp(-pr2 * 7.0) * uPointerAmt;
-  pull -= (pd / (sqrt(pr2) + 0.05)) * pAmt * 0.30;
-  pull += uPointerVel * (exp(-pr2 * 12.0) * uWake) * 0.30;
+  /* --- pointer: a fan of its own, plus a wake along its recent direction --- */
+  vec2  pd  = pc - uPointer;
+  float pr2 = dot(pd, pd);
+  float pA  = exp(-pr2 * 8.0) * uPointerAmt * 0.85;
+  bd += normalize(pd + vec2(1e-5)) * pA;
+  bw += pA;
+  float wk = exp(-pr2 * 12.0) * uWake * 0.55;
+  bd += normalize(uPointerVel + vec2(1e-5)) * wk;
+  bw += wk;
 
-  /* --- the warped plane ---
-     Anisotropic: the large y scale is what makes iso-lines of q.y run
-     horizontally as combed contours, rather than in whatever direction the noise
-     happens to point. For the same reason the undulation is almost entirely in
-     y — displacing x as hard as y brings the whorls straight back.
+  if (bw > 0.002) {
+    vec2 bn = normalize(bd + vec2(1e-6));
+    /* A mark is symmetric under 180 degrees, so an opposed pair has to be folded
+       onto the same side before blending or the two cancel into an arbitrary
+       direction, which shows up as a seam through the middle of every fan. */
+    if (dot(bn, dir) < 0.0) bn = -bn;
+    dir   = normalize(mix(dir, bn, clamp(bw * BURST, 0.0, 1.0)));
+    dens += bw * 0.45;
+  }
 
-     The slope has to stay well above the warp amplitude. Comparable values put
-     extrema all through the field, and every extremum in a coordinate whose
-     iso-lines you are drawing is a closed contour. That constraint bites harder
-     here than it did when the lines were soft: a loop drawn in hard faceted
-     segments is far more conspicuous than one drawn in smooth curves.
-
-     Three octaves, coarse. Each extra octave subdivides the facets, and enough
-     of them converge back on a smooth field.
-
-     Lattice frequency matters as much as amplitude. Too coarse and a single cell
-     edge spans most of the frame, so every contour kinks on the same vertical
-     line at once and it reads as a seam rather than as faceting. Smaller cells
-     scatter those kinks. */
-  vec2  q  = vec2(p.x * 0.85, p.y * 7.0);
-  float u1 = fbmTri(vec2(q.x * 1.15, q.y * 0.27) + vec2(t, 0.0), 3);
-  float u2 = fbmTri(vec2(q.x * 2.40, q.y * 0.46) + vec2(-t * 0.8, 3.1), 2);
-  q.y += 3.60 * u1 + 1.15 * u2;
-  q.x += 0.14 * u2;
-  q += pull;
-
-  /* --- ONE family, three harmonics, coarse to fine ---
-     No cross-hatch, no second layer. An earlier version drew six families — one
-     dominant, two crossing it at 60 degrees, and two more in a far layer at a
-     different scale — and they collided: lines overlapped and piled up in ways
-     that read as accidental rather than designed. Everything here reads the same
-     warped coordinate, so nothing can cross anything else. */
-  float field = q.y;
-  float along = q.x * 4.0 - uTime * 0.34;
-  vec3 rad = lineFam(field * 11.0 - 0.21, 1.15,  3.0, along, 0.14) * 0.72
-           + lineFam(field * 22.0,        0.95,  7.0, along, 0.20) * 1.00
-           + lineFam(field * 44.0 + 0.37, 0.80, 13.0, along, 0.28) * 0.34;
-
-  /* --- landscape band: the mass sits in a wavy horizontal belt --- */
-  float hz   = 0.58 + 0.09 * fbmTri(vec2(p.x * 1.3 + uTime * 0.011, 3.7), 2);
-  float mass = smoothstep(hz + 0.30, hz - 0.08, uvy) * smoothstep(hz - 0.50, hz - 0.18, uvy);
   /* Haze the extremes so the field has no visible edge, measured against the
      actual half-width so an ultrawide fades at its own edges. */
-  mass *= smoothstep(1.0, 0.60, abs(p.x) / halfW);
-  mass = 0.22 + 0.78 * mass; // never fully empty: this is line-work, not fog
+  dens *= smoothstep(1.02, 0.62, abs(pc.x) / halfW);
+
+  /* A portrait frame is a different composition, not a cropped one: the copy
+     spans its whole width rather than sitting in a column, and the field has far
+     less room to breathe around it. So the guard stops being left-biased and the
+     whole field steps back. */
+  float narrow = 1.0 - smoothstep(0.55, 0.80, halfW);
+  dens *= mix(1.0, 0.52, narrow);
+  dens  = clamp(dens, 0.0, 1.0);
 
   /* --- contrast guard ---
      The headline, sub-label and CTA are light type over this, under .hero__veil.
      On a dark ground that is a much easier position than it was on bronze, so
      this is gentler than it needed to be before — but it is not gone. Do not
-     weaken it without re-running the contrast probe. */
-  float copyCol = 1.0 - smoothstep(-0.55, 0.50, p.x / halfW);
-  float lowBand = 1.0 - smoothstep(0.02, 0.92, uvy);
-  float guard   = 1.0 - 0.55 * copyCol * lowBand;
+     weaken it without re-running the contrast probe.
+
+     Both extents are aspect-aware, and the vertical one matters most: the copy
+     is a column in the lower-left of a landscape frame but nearly the whole of a
+     portrait one, so a band tuned to the desktop stops short and leaves the
+     phone headline sitting on bare field. */
+  float guard = 1.0 - 0.68
+    * mix(1.0 - smoothstep(-0.50, 0.55, pc.x / halfW), 1.0, narrow)
+    * (1.0 - smoothstep(0.06, mix(0.62, 0.96, narrow), uvyc));
+
+  /* --- one mark per cell ---
+     Quantise the orientation, then draw a capsule in cell-local DEVICE PIXELS.
+
+     reach is the cell's half-extent along the mark direction, so a full-length
+     mark exactly spans its own cell and butts against its neighbours: the long
+     horizontal runs and the vertical columns are single-cell marks meeting end
+     to end, not long lines. At length zero the capsule degenerates to a dot,
+     which is the empty-cell mark — one primitive for the whole vocabulary, no
+     branch and no threshold.
+
+     Width is a fraction of the cell with a pixel floor, so the mark keeps its
+     apparent weight as the grid scales and never thins away on a short viewport.
+     There is no Nyquist fade here and none is needed: an earlier version drew
+     line families whose period could fall under 2px and moire viciously, but a
+     mark is cell-sized by construction and can never approach it. */
+  float ang = atan(dir.y, dir.x);
+  ang = floor(ang * (SEG / PI) + 0.5) * (PI / SEG);
+  vec2  d = vec2(cos(ang), sin(ang));
+  vec2  m = cf * cell;
+  float reach = 0.5 / max(abs(d.x) / cell.x, abs(d.y) / cell.y);
+  float L = reach * clamp(dens * (0.85 + 0.55 * jit), 0.0, 1.10);
+  float W = max(0.085 * cell.y, 0.9);
+  float r = length(vec2(max(abs(dot(m, d)) - L, 0.0), abs(dot(m, vec2(-d.y, d.x)))));
+  float mark = 1.0 - smoothstep(W - 0.6, W + 0.6, r);
+
+  /* Light travels the field. Each cell hashes its own brightness on a cubic tail
+     — a few hot, most faint — and its own pulse phase, and each range carries an
+     offset so the wave never sweeps all four in unison. The empty-cell dot sits
+     at a flat low value and never pulses: the sky in the reference is still. */
+  float along = pc.x * 5.0 + lay * 2.7 - uTime * 0.34;
+  /* The pulse floor has to sit high. Line families overlapped, so a low floor
+     still summed to a lit frame; one independent mark per cell does not, and the
+     same 0.55 that read as travelling light on lines reads as a dim speckle
+     here. The travelling part is the tail, not the base. */
+  float pulse = 0.86 + 1.40 * smoothstep(0.62, 0.98, sin(along + hb * 39.0) * 0.5 + 0.5);
+  float ink   = mix(0.10, (0.42 + 1.15 * hb * hb * hb) * pulse, dens);
 
   /* --- assemble, in linear --- */
   vec3 col = mix(GROUND_L, LIFT_L, smoothstep(-0.05, 1.05, uvy));
-  col += rad * mass * guard;
+  col += PHOS_L * (mark * ink * guard);
 
   col = tone(col);
   col = pow(max(col, 0.0), vec3(1.0 / 2.2)); // linear -> sRGB
@@ -374,14 +506,18 @@ function init(): void {
      ponytail: fixed steps, not a real adaptive controller. Ceiling: it only ever
      steps down, never recovers if the machine frees up. A rolling window that
      also steps back up is the upgrade if that ever shows. */
-  /* Measured with a GPU timer query, not guessed: ~2.54ms per megapixel on the
-     machine this was built on, so 6.0e6 is the largest buffer that still fits
-     inside a 16.7ms frame with headroom. Dropping from six line families to one
-     bought this back — at 3.07ms/MP the cap had to sit at 5.0e6, which cost a
-     3440-wide ultrawide about 10% of its resolution. It now renders essentially
-     1:1, which was the point of the whole exercise. Still only binds at the top
+  /* Measured with a GPU timer query, not guessed: ~2.75ms per megapixel on the
+     machine this was built on (2.07 / 3.69 / 4.95 MP all landed within 1%, so it
+     is genuinely linear in fill), which makes 5.5e6 the largest buffer that
+     still fits a 16.7ms frame. The mark grid costs a little more than the line
+     families it replaced — the skyline walk and the flow noise are more work per
+     fragment than three harmonics of one coordinate were — so this comes down
+     from 6.0e6. A 3440-wide ultrawide therefore renders at about 95% rather than
+     1:1, which is invisible next to the flow texture that paid for it.
+     Re-measure whenever the skyline walk or the flow noise changes; the octave
+     count in flowAngle is the single biggest term. Still only binds at the top
      end: a 1x desktop never reaches it and a phone at 3x keeps the full 2x cap. */
-  const MAX_PIXELS = 6.0e6;
+  const MAX_PIXELS = 5.5e6;
   const dpr = window.devicePixelRatio || 1;
   const STEPS = [...new Set([2, 1.5, 1, 0.75].map((s) => Math.min(dpr, s)))];
   let step = 0;

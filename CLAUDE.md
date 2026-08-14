@@ -112,49 +112,74 @@ display's own resolution. It replaced a 2675×1506 WebP that visibly blurred on 
 its own pixel count. There is no hero image, no `site.hero.image`, and no hero preload in
 `Base.astro` — do not reintroduce them.
 
-It draws a **faceted line field on a two-tone terminal palette**: angular, high contrast, minimal
-tonal range. ASCII as a discipline, not as literal glyphs. **There is no bloom anywhere in it**, and
-that is deliberate — an earlier version had glowing nodes pinned at fixed positions and they were the
-thing that had to go.
+It draws an **ASCII terrain**: a layered mountain silhouette rendered as marks on a character grid, on
+a two-tone terminal palette. Angular, high contrast, minimal tonal range. **There is no bloom anywhere
+in it**, and that is deliberate — an early version had glowing nodes pinned at fixed positions and
+they were the thing that had to go.
 
 Things to know before editing it:
 
+- **The quantisation is the whole thing.** Everything that decides *what* to draw is evaluated at the
+  **cell centre**, never at the fragment. Sample per-fragment instead and you get a swept field again —
+  the same field, but reading as a topographic map rather than as character art. Only the ground
+  gradient and the grain read the fragment, because both want to stay smooth across a cell.
+- **One primitive covers the whole vocabulary.** Each cell draws a single capsule in cell-local device
+  pixels, oriented along the flow. Its length carries the local density, and at length zero it
+  degenerates to a dot — which *is* the empty-cell mark that makes the sky. No branch, no threshold,
+  no glyph atlas. `reach` is the cell's half-extent along the mark direction, so a full-length mark
+  spans its own cell exactly and butts against its neighbours: the long horizontal runs and the
+  vertical columns are single-cell marks meeting end to end, not long lines.
+- **Oriented marks cannot close into loops, and that lifted the constraint that shaped every earlier
+  version.** An extremum in a coordinate whose iso-lines you draw *is* a closed contour, which is why
+  the old line field needed a huge anisotropy (`p.y * 7.0`), a tiny node `PULL` of 0.20, and angle-
+  space rays to draw a burst at all. Nothing draws a scalar field now, so the fans are simply the
+  direction marks point, and the flow is free to swirl. Do not port those old constraints back in.
+- **The direction is an ANGLE field, not the gradient of a scalar one.** A direct angle costs one fbm;
+  differentiating a scalar costs three taps of one, and the angle is quantised immediately afterwards
+  so the extra precision is thrown away. Marks run parallel to the range silhouette and swing off
+  noise, with both effects fading with depth into the flank so the foreground settles into long
+  horizontal runs.
+- **Three octaves in `flowAngle`, and the third is not optional.** It contributes about ±11°, which
+  straddles a 22.5° quantisation step, so it is precisely what scatters neighbouring cells into
+  adjacent bins. Drop it and the marks comb into long uniform ribbons — smoother, ~10% cheaper, and no
+  longer terrain. This was tried and reverted.
+- **Back ranges sit higher AND swing harder.** Easy to get backwards: aerial perspective says distant
+  things are *fainter*, not flatter, and the range meeting the sky is the one the eye reads as the
+  silhouette. Give the back ranges small amplitude and the skyline goes flat and nothing below can
+  rescue it.
+- **The silhouette line recedes far less than the body it encloses** (`edge * (0.55 + 0.45*fade)` vs
+  `flank * fade`). Fade both together and a back crest matches a front flank, and the four ranges wash
+  into one band. The `break` in the ownership walk is the occlusion — frontmost claimant wins, free.
 - **The faceting comes from the interpolation.** `ptri()` is a triangular-lattice noise whose
-  barycentric weights are deliberately **not** smoothed. That makes the field planar inside every
-  triangle, and iso-lines of a planar field are straight segments that kink only on lattice edges.
-  Reintroduce the usual `f*f*(3-2f)` and every contour goes back to being a smooth curve. Keep the
-  octave count low, too — each extra octave subdivides the facets and enough of them converge back on
-  a smooth field.
-- **One line family, three harmonics.** An earlier version drew six — one dominant, two crossing it at
-  60°, and two more in a far layer at another scale — and they collided: lines overlapped and piled up
-  in ways that read as accidental. Everything now reads the same warped coordinate, so nothing can
-  cross anything else. Do not reintroduce a cross-hatch or a second layer.
-- **The coordinate is anisotropic** (`q = vec2(p.x * 0.85, p.y * 7.0)`), and that large y scale is the
-  only reason the contours run horizontally instead of in whatever direction the noise points. The
-  undulation is almost entirely in y for the same reason — displacing x as hard as y brings whorls
-  back. Keep the slope well above the warp amplitude: comparable values put extrema through the field,
-  and every extremum in a coordinate whose iso-lines you are drawing is a closed contour. That bites
-  harder with hard faceted lines than it did with soft ones.
-- **Lattice frequency matters as much as amplitude.** Too coarse and one cell edge spans most of the
-  frame, so every contour kinks on the same vertical line at once and it reads as a seam rather than
-  as faceting.
+  barycentric weights are deliberately **not** smoothed, so the field is planar inside every triangle
+  and the skyline is faceted rather than smoothly curved. Reintroduce the usual `f*f*(3-2f)` and it
+  rounds off. Keep the octave count low for the same reason.
 - **Everything accumulates in LINEAR light**, and the palette constants are already raised to 2.2.
   Never paste sRGB values into them. The tonemap is a highlight-only shoulder, deliberately not ACES.
-- **Line width is fixed in screen pixels** via `fwidth`, which is what keeps it sharp at any DPR.
-  Harmonics fade out past Nyquist — do not remove that fade. Hard-edged lines moiré far more viciously
-  than soft ones, so it is doing more work here than it was when the field was atmospheric.
-- **Per-line identity is what stops it reading as a uniform grid.** Each line hashes brightness (cubic
-  tail), width, pulse phase and whether it runs dashed, off `floor(v)`.
-- **Nodes are drawn, never lit.** They are only places the lines crowd toward, and they wander.
-  Keep `PULL` small: a radial pull competing with the base slope closes an iso-line into a ring at the
-  radius where they cancel, which reads as a tree knot around every node.
-- **Contrast is load-bearing**, though the dark ground makes it a far easier position than the bronze
-  one did. Worst case, measured across frames: sub 6.03:1, h1 10.67:1, CTA 10.61:1, statcard 3.09:1.
-  The statcard stays the weakest pairing — its frost is a *light* fill, so it sits as a mid-grey panel
-  over the dark ground. `test-contrast.mjs` does **not** cover any of this; it only checks token pairs.
+- **The pulse floor has to sit high** (0.86). Line families overlapped, so a low floor still summed to
+  a lit frame; one independent mark per cell does not, and the 0.55 that read as travelling light on
+  lines reads as dim speckle here. The travelling part is the tail, not the base.
+- **There is no Nyquist fade and none is needed.** The old line families had a period that could fall
+  under 2px and moiré viciously. A mark is cell-sized by construction and can never approach it; the
+  capsule's own ~1px AA edge is the whole story.
+- **Aspect-awareness is load-bearing in three places**, all of which were wrong at first and only
+  showed up on a portrait phone: `COLS` floors the cell size so a tall narrow canvas does not end up
+  with ~50 columns of chunky tiles; node anchors are authored against a 16:9 half-width and rescaled,
+  or five of six fall outside the frame and the sixth sits dead centre behind the headline; and the
+  contrast guard's extents widen, because the copy is a column in the lower-left of a landscape frame
+  but nearly the whole of a portrait one.
+- **Contrast is load-bearing.** Measured across frames at 1600×900: sub 7.27:1, h1 12.34:1, CTA
+  15.11:1, statcard 3.37:1 — all above the phase-4 line field they replaced (6.00 / 10.93 / 14.51 /
+  3.10 by the identical method). Phone at 390×844: sub 6.52:1, h1 10.80:1. The statcard stays the
+  weakest pairing — its frost is a *light* fill, so it sits as a mid-grey panel over the dark ground.
+  `test-contrast.mjs` does **not** cover any of this; it only checks token pairs.
   The method is: inject CSS making the hero type transparent, screenshot several frames, measure each
-  type rect's backdrop with `sharp`, take the worst. The travelling light moves between frames, so a
-  single reading is not trustworthy.
+  type rect's backdrop with `sharp`. The travelling light moves between frames, so a single reading is
+  not trustworthy. Two traps: `.hero__h1 em` and the statcard's inline-styled SVG carry their own
+  colour and survive a naive `color: transparent`, so they get measured as "backdrop" and the numbers
+  come out meaningless; and the frost panel must **stay**, because the statcard text genuinely sits on
+  it. Compare mean against mean — the worst-pixel column is a single hot mark behind a letter stroke
+  and reads ~1.3:1 on every version of this shader, including the ones that shipped.
 - **`.hero`'s CSS fallback gradient must track the shader's ground.** It is the no-WebGL and
   lost-context path, and if it still said bronze that path would look like a different site.
 - **It runs off `gsap.ticker`**, which `scroll.ts` already drives in lockstep with Lenis. Do not open a
@@ -163,10 +188,13 @@ Things to know before editing it:
   the scroll parallax and the two would fight.
 - **Reduced motion** renders exactly one frame, and takes `preserveDrawingBuffer` — without it that
   frame vanishes on the next re-raster.
-- **Two perf governors.** `MAX_PIXELS` (6.0e6) caps total work, set from a GPU timer query: this
-  shader costs ~2.54ms per megapixel, so 6.0e6 is the largest buffer that fits a 16.7ms frame with
-  headroom. Re-measure it if the line families change — six families cost 3.07ms/MP and forced the cap
-  down to 5.0e6, which cost an ultrawide about 10% of its resolution. It binds only at the top end. The frame-time ladder is the backstop and only steps
+- **Two perf governors.** `MAX_PIXELS` (5.5e6) caps total work, set from a GPU timer query: this
+  shader costs ~2.75ms per megapixel (measured at 2.07 / 3.69 / 4.95 MP, all within 1% — it is
+  genuinely linear in fill), so 5.5e6 is the largest buffer that fits a 16.7ms frame. Re-measure
+  whenever the skyline walk or the flow noise changes; the octave count in `flowAngle` is the single
+  biggest term. History: six line families cost 3.07ms/MP → 5.0e6, one family 2.54 → 6.0e6, the mark
+  grid 2.75 → 5.5e6. At 5.5e6 a 3440-wide ultrawide renders at ~95%, which is invisible next to the
+  flow texture that paid for it. It binds only at the top end. The frame-time ladder is the backstop and only steps
   **down**, on frames between 24ms and 300ms. Both bounds matter: below 24ms you are marking healthy
   60fps frames as slow, and above 300ms you are not measuring the GPU at all — Chrome throttles
   occluded windows to ~1fps without ever setting `document.hidden`, and without the upper bound the
