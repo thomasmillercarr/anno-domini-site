@@ -107,56 +107,61 @@ palette, so theming holds:
 ## The hero backdrop is generated, not photographed
 
 The hero is **not an image**. `.hero__slot` is a `<canvas>` painted by
-[`scripts/herofield.ts`](web/src/scripts/herofield.ts) — **five passes, three programs**, rendered at
-the display's own resolution. It replaced a 2675×1506 WebP that visibly blurred on any display wider
-than its own pixel count. There is no hero image, no `site.hero.image`, and no hero preload in
+[`scripts/herofield.ts`](web/src/scripts/herofield.ts) — **one fullscreen quad, one program** — at the
+display's own resolution. It replaced a 2675×1506 WebP that visibly blurred on any display wider than
+its own pixel count. There is no hero image, no `site.hero.image`, and no hero preload in
 `Base.astro` — do not reintroduce them.
 
-The pipeline is: **A** field → `sceneTex` in linear HDR (alpha carries the contrast guard); **B/C**
-bright-pass + separable blur at ¼; **D** second octave at ⅛; **E** composite, tonemap, grain, sRGB.
+It draws a **faceted line field on a two-tone terminal palette**: angular, high contrast, minimal
+tonal range. ASCII as a discipline, not as literal glyphs. **There is no bloom anywhere in it**, and
+that is deliberate — an earlier version had glowing nodes pinned at fixed positions and they were the
+thing that had to go.
 
 Things to know before editing it:
 
-- **Everything accumulates in LINEAR light**, and the palette constants in the shader are already
-  raised to 2.2. Never paste sRGB values into them. Accumulating in gamma space is what makes bright
-  areas go chalky grey instead of hot, and it is a physical error, not a matter of taste.
-- **The tonemap is a highlight-only shoulder, deliberately not ACES.** ACES desaturates and pulls
-  midtones down, and the midtones here are exactly what the type contrast is measured against.
-  Everything in the background ramp sits below the shoulder and passes through untouched.
-- **Contrast is load-bearing.** The headline, sub-label and CTA are light type over this, under
-  `.hero__veil`. `CORE` and `FOG` are set by measurement, not by eye. Because contrast is a function of
-  *mean* luminance and the strands are thin, the fog wash on the base is pushed hard while the guard on
-  the strands is kept light — suppressing the strands instead just empties the left of the frame.
-  Current worst-case, measured across frames: sub 2.57:1, h1 4.98:1, CTA 6.33:1, statcard 2.29:1.
-  `test-contrast.mjs` does **not** cover any of this — it only checks token pairs. The method is:
-  inject CSS making the hero type transparent, screenshot several frames, measure the backdrop under
-  each type rect with `sharp`, take the worst. The travelling pulses move light around, so a
-  single-frame reading is not trustworthy.
-- **Filaments are iso-lines of a warped *coordinate*, not of the noise**, and the y slope (7.0) must
-  stay well above the warp amplitude (~±1.5). Comparable values put extrema through the field, and an
-  extremum in a coordinate whose iso-lines you are drawing is a closed contour — it reads as wood grain.
-- **Node bursts are drawn in angle space, not squeezed out of the flow.** A scalar field whose
-  iso-lines radiate from a point must have a critical point there, and that critical point is a ring —
-  bending the flow radially always produces a tree-knot artefact at the radius where the bend cancels
-  the slope. Angle-space rays have no such constraint and stay continuous across the atan seam because
-  the ray count (26) is an integer.
-- **Per-strand identity is what stops it reading as a contour map.** Each strand hashes brightness (a
-  cubic tail: a few hot, most faint), width and temperature off `floor(v)`.
-- **Hashes are sin-free on purpose.** At ~58 hashes per pixel the transcendental version was the
-  difference between holding 60fps and the ladder degrading resolution.
+- **The faceting comes from the interpolation.** `ptri()` is a triangular-lattice noise whose
+  barycentric weights are deliberately **not** smoothed. That makes the field planar inside every
+  triangle, and iso-lines of a planar field are straight segments that kink only on lattice edges.
+  Reintroduce the usual `f*f*(3-2f)` and every contour goes back to being a smooth curve. Keep the
+  octave count low, too — each extra octave subdivides the facets and enough of them converge back on
+  a smooth field.
+- **Three line families at 60°** read the same warped point: one dense dominant family carrying the
+  topographic reading, two lighter ones crossing it. The weight ratio between them is the main dial
+  for how severe this looks. The warp amplitude must stay well under the projection scale `S` —
+  comparable values pile the lines into a scribble.
+- **Everything accumulates in LINEAR light**, and the palette constants are already raised to 2.2.
+  Never paste sRGB values into them. The tonemap is a highlight-only shoulder, deliberately not ACES.
+- **Line width is fixed in screen pixels** via `fwidth`, which is what keeps it sharp at any DPR.
+  Harmonics fade out past Nyquist — do not remove that fade. Hard-edged lines moiré far more viciously
+  than soft ones, so it is doing more work here than it was when the field was atmospheric.
+- **Per-line identity is what stops it reading as a uniform grid.** Each line hashes brightness (cubic
+  tail), width, pulse phase and whether it runs dashed, off `floor(v)`.
+- **Nodes are drawn, never lit.** They are only places the lines crowd toward, and they wander.
+  Keep `PULL` small: a radial pull competing with the base slope closes an iso-line into a ring at the
+  radius where they cancel, which reads as a tree knot around every node.
+- **Contrast is load-bearing**, though the dark ground makes it a far easier position than the bronze
+  one did. Worst case, measured across frames: sub 6.90:1, h1 12.14:1, CTA 11.08:1, statcard 3.31:1.
+  The statcard stays the weakest pairing — its frost is a *light* fill, so it sits as a mid-grey panel
+  over the dark ground. `test-contrast.mjs` does **not** cover any of this; it only checks token pairs.
+  The method is: inject CSS making the hero type transparent, screenshot several frames, measure each
+  type rect's backdrop with `sharp`, take the worst. The travelling light moves between frames, so a
+  single reading is not trustworthy.
+- **`.hero`'s CSS fallback gradient must track the shader's ground.** It is the no-WebGL and
+  lost-context path, and if it still said bronze that path would look like a different site.
 - **It runs off `gsap.ticker`**, which `scroll.ts` already drives in lockstep with Lenis. Do not open a
   second rAF loop; one clock is what keeps it feeling attached to the smooth scroll.
 - **The canvas must never set its own transform** — `reveal.ts` scrubs `yPercent` on `.hero__slot` for
   the scroll parallax and the two would fight.
-- **Fallbacks**: no WebGL2, or a lost context, drops to the CSS gradient on `.hero`, which is built
-  from the same palette and is a complete design on its own. Without `EXT_color_buffer_float` the
-  targets fall back to `RGBA8` with the range packed into them. Reduced motion renders exactly one
-  frame (and takes `preserveDrawingBuffer`, without which that frame vanishes on the next re-raster).
-- **Two perf governors.** A pixel budget (`MAX_PIXELS`, 3.0e6) caps total work — measured, because this
-  shader runs ~22ms/frame at 4.2 megapixels, and a deliberate 0.85 scale beats the ladder reacting its
-  way down to 0.75. On a 1× display the cap never binds. The frame-time ladder is the backstop: it only
-  steps **down**, on frames over 24ms, and it ignores the first 90 frames — a load-time burst would
-  otherwise permanently degrade the render. Keep 24ms clear of the 16.7ms a healthy frame takes.
+- **Reduced motion** renders exactly one frame, and takes `preserveDrawingBuffer` — without it that
+  frame vanishes on the next re-raster.
+- **Two perf governors.** `MAX_PIXELS` (5.0e6) caps total work, set from a GPU timer query: this
+  shader costs ~3.07ms per megapixel, so 5.0e6 is the largest buffer that fits a 16.7ms frame with
+  headroom. It binds only at the top end. The frame-time ladder is the backstop and only steps
+  **down**, on frames between 24ms and 300ms. Both bounds matter: below 24ms you are marking healthy
+  60fps frames as slow, and above 300ms you are not measuring the GPU at all — Chrome throttles
+  occluded windows to ~1fps without ever setting `document.hidden`, and without the upper bound the
+  ladder quietly degrades the render while nobody is looking at it. It also ignores the first 90
+  frames, since the load-time burst would otherwise do the same.
 
 ## ⚠ Outstanding before launch — privacy policy
 

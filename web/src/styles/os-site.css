@@ -422,14 +422,14 @@ section { position: relative; }
    ============================================================ */
 /* The hero's own background is the fallback for the generated backdrop: it shows
    on the first frame, and it stands alone if WebGL is unavailable or the context
-   is lost. Built from the palette tokens so it reads as the same artwork with
-   the filaments turned off, and it is dark enough at the bottom for the veil and
-   the light type to keep working on their own. */
+   is lost. It must track the shader's ground — the field is a two-tone terminal
+   palette now, so this is the same near-flat dark warm, not the old bronze. Get
+   this wrong and the no-WebGL path looks like a different site. */
 .hero {
   position: relative; min-height: 100vh; display: flex; align-items: flex-end; overflow: hidden;
   background:
-    radial-gradient(120% 74% at 68% 46%, rgba(201, 162, 122, 0.34) 0%, rgba(201, 162, 122, 0) 62%),
-    linear-gradient(to top, #7F7266 0%, #8F8275 14%, #AB8F74 50%, #D5C4AE 82%, #E5D7C7 100%);
+    radial-gradient(120% 74% at 68% 46%, rgba(232, 184, 126, 0.10) 0%, rgba(232, 184, 126, 0) 64%),
+    linear-gradient(to top, #16120E 0%, #1A1611 22%, #241E17 62%, #302820 100%);
 }
 /* every full-bleed background image fills its positioned parent */
 .manifesto__slot, .device__slot {
