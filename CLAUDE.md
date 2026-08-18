@@ -112,94 +112,123 @@ display's own resolution. It replaced a 2675×1506 WebP that visibly blurred on 
 its own pixel count. There is no hero image, no `site.hero.image`, and no hero preload in
 `Base.astro` — do not reintroduce them.
 
-It draws an **ASCII terrain**: a layered mountain silhouette rendered as marks on a character grid, on
-a two-tone terminal palette. Angular, high contrast, minimal tonal range. **There is no bloom anywhere
-in it**, and that is deliberate — an early version had glowing nodes pinned at fixed positions and
-they were the thing that had to go.
+It draws **digital smoke threaded through wiring**. A bus of five hard routed traces crosses the upper
+half of the frame; smoke sheds off them, rises, rails along a trace where the flow runs near one, and
+tears loose where a trace kinks. Two-tone: a near-flat dark warm ground and a single amber.
 
 Things to know before editing it:
 
-- **The quantisation is the whole thing.** Everything that decides *what* to draw is evaluated at the
-  **cell centre**, never at the fragment. Sample per-fragment instead and you get a swept field again —
-  the same field, but reading as a topographic map rather than as character art. Only the ground
-  gradient and the grain read the fragment, because both want to stay smooth across a cell.
-- **One primitive covers the whole vocabulary.** Each cell draws a single capsule in cell-local device
-  pixels, oriented along the flow. Its length carries the local density, and at length zero it
-  degenerates to a dot — which *is* the empty-cell mark that makes the sky. No branch, no threshold,
-  no glyph atlas. `reach` is the cell's half-extent along the mark direction, so a full-length mark
-  spans its own cell exactly and butts against its neighbours: the long horizontal runs and the
-  vertical columns are single-cell marks meeting end to end, not long lines.
-- **Oriented marks cannot close into loops, and that lifted the constraint that shaped every earlier
-  version.** An extremum in a coordinate whose iso-lines you draw *is* a closed contour, which is why
-  the old line field needed a huge anisotropy (`p.y * 7.0`), a tiny node `PULL` of 0.20, and angle-
-  space rays to draw a burst at all. Nothing draws a scalar field now, so the fans are simply the
-  direction marks point, and the flow is free to swirl. Do not port those old constraints back in.
-- **The direction is an ANGLE field, not the gradient of a scalar one.** A direct angle costs one fbm;
-  differentiating a scalar costs three taps of one, and the angle is quantised immediately afterwards
-  so the extra precision is thrown away. Marks run parallel to the range silhouette and swing off
-  noise, with both effects fading with depth into the flank so the foreground settles into long
-  horizontal runs.
-- **Three octaves in `flowAngle`, and the third is not optional.** It contributes about ±11°, which
-  straddles a 22.5° quantisation step, so it is precisely what scatters neighbouring cells into
-  adjacent bins. Drop it and the marks comb into long uniform ribbons — smoother, ~10% cheaper, and no
-  longer terrain. This was tried and reverted.
-- **Back ranges sit higher AND swing harder.** Easy to get backwards: aerial perspective says distant
-  things are *fainter*, not flatter, and the range meeting the sky is the one the eye reads as the
-  silhouette. Give the back ranges small amplitude and the skyline goes flat and nothing below can
-  rescue it.
-- **The silhouette line recedes far less than the body it encloses** (`edge * (0.55 + 0.45*fade)` vs
-  `flank * fade`). Fade both together and a back crest matches a front flank, and the four ranges wash
-  into one band. The `break` in the ownership walk is the occlusion — frontmost claimant wins, free.
-- **The faceting comes from the interpolation.** `ptri()` is a triangular-lattice noise whose
-  barycentric weights are deliberately **not** smoothed, so the field is planar inside every triangle
-  and the skyline is faceted rather than smoothly curved. Reintroduce the usual `f*f*(3-2f)` and it
-  rounds off. Keep the octave count low for the same reason.
+- **The smoke has no field of its own. It IS the wiring, transported.** The density source that the
+  advection samples is the bus. That is the whole reason the two read as one system rather than as two
+  layers alpha-blended, and it is the first thing to preserve. Give the smoke an independent noise
+  field and you have built the thing this direction exists to avoid.
+- **The advection accumulates ALONG the path; it does not sample the end of it.** Sampling the source
+  at one backtracked point gives a displaced copy of the source, which is not a trail — it is the same
+  shape somewhere else. Four samples with decaying weight is what turns a band around the wires into
+  something that streams off them.
+- **The sheath widens along the path.** Physically that is diffusion. Practically it is what keeps the
+  trail continuous: the steps are much further apart than the sheath is wide, so a constant width draws
+  the plume as a string of beads. This is also why the sample count cannot simply be reduced — three
+  samples was tried, is 15% faster, and beads visibly.
+- **Real iterated advection is impossible here** and the file says so. It needs state between frames,
+  so a feedback texture, a second target and a second program. The one-pass substitute is per-fragment
+  backward integration through an analytic field, with the velocity evaluated **once** and then rotated
+  and shrunk along the path. Re-evaluating the flow per step is the naive form and roughly doubles the
+  cost of the frame.
+- **A run smokes where the charge is, not evenly along its length.** An even source is a curtain; it
+  was one, and it draped over the upper half and buried the wiring. The emission reads the same phase
+  the trace draws its pulse from, one term behind. Nothing extra is evaluated for it.
+- **The faceted triangular noise that every earlier version used is GONE, and that is not a
+  regression.** A piecewise-linear field has a piecewise-*constant* gradient: used as a stream function
+  it gives every fragment inside a lattice triangle the same velocity, so they all backtrack identically
+  and the frame fills with flat-shaded polygons with hard straight edges. And rendered as a level set
+  rather than as iso-lines, a planar field simply *is* a flat polygon. The faceting was only ever
+  invisible because nothing before this drew its levels. Value noise with a quintic fade replaces it;
+  the crease comes from a **ridged** transform instead, which puts sharp creases on the zero set of a
+  smooth field.
+- **Every octave is rotated as well as scaled.** Value noise sits on a square lattice, its features
+  align with the axes, and stacking octaves on the same axes draws tall axis-aligned rectangles across
+  the frame. The ridged transform makes that much worse.
+- **The stream function's gradient is analytic, not finite differences.** Three taps of a two-octave
+  fbm is 6 noise evaluations for an approximate derivative; the closed form is 2 for an exact one. This
+  is the single optimisation that has ever paid on this shader (4.42 → 3.72 ms/MP).
+- **`busNear` uses vertical distance, not perpendicular distance; the drawn trace uses perpendicular.**
+  The slope correction has discontinuities at every ramp boundary, and anything carrying them into a
+  quantity evaluated along an advection path draws hard vertical seams down the full height of the
+  frame — five runs times four ramp ends, and the frame is barred like a cage. The trace needs the
+  correction because there a 40% width error is the difference between a machined join and a fat one,
+  and its own extent confines the seam to the wire. The slope also has to ramp on and off **smoothly**
+  over the ramp, not switch at its ends, for the same reason.
+- **The composition puts the sources above the type.** The bus sits in the upper half because the
+  headline is a column in the lower left and the statcard a panel in the lower right; the bottom of the
+  frame is then quiet by construction rather than by clawing density back with the guard. The runs also
+  terminate at staggered x, lowest soonest, so the cascade opens out over the headline's corner.
 - **Everything accumulates in LINEAR light**, and the palette constants are already raised to 2.2.
   Never paste sRGB values into them. The tonemap is a highlight-only shoulder, deliberately not ACES.
-- **The pulse floor has to sit high** (0.86). Line families overlapped, so a low floor still summed to
-  a lit frame; one independent mark per cell does not, and the 0.55 that read as travelling light on
-  lines reads as dim speckle here. The travelling part is the tail, not the base.
-- **There is no Nyquist fade and none is needed.** The old line families had a period that could fall
-  under 2px and moiré viciously. A mark is cell-sized by construction and can never approach it; the
-  capsule's own ~1px AA edge is the whole story.
-- **Aspect-awareness is load-bearing in three places**, all of which were wrong at first and only
-  showed up on a portrait phone: `COLS` floors the cell size so a tall narrow canvas does not end up
-  with ~50 columns of chunky tiles; node anchors are authored against a 16:9 half-width and rescaled,
-  or five of six fall outside the frame and the sixth sits dead centre behind the headline; and the
-  contrast guard's extents widen, because the copy is a column in the lower-left of a landscape frame
-  but nearly the whole of a portrait one.
-- **Contrast is load-bearing.** Measured across frames at 1600×900: sub 7.27:1, h1 12.34:1, CTA
-  15.11:1, statcard 3.37:1 — all above the phase-4 line field they replaced (6.00 / 10.93 / 14.51 /
-  3.10 by the identical method). Phone at 390×844: sub 6.52:1, h1 10.80:1. The statcard stays the
-  weakest pairing — its frost is a *light* fill, so it sits as a mid-grey panel over the dark ground.
+- **No bloom.** The smoke's softness is density falloff, not energy spreading.
+- **Aspect-awareness is load-bearing in three places**: the bus lifts on a portrait frame (the copy
+  stops being a column and the statcard drops below it, so both take far more height); the step
+  *heights* rescale with the half-width as well as the kink positions, or a phone routes the same climb
+  over a third of the distance and the bus reads as a zigzag; and the guard's extents widen.
+- **Contrast is load-bearing, and this version improved every pairing.** Measured mean-against-mean at
+  1600×900: sub 7.83:1, h1 14.71:1, CTA 12.65:1, statcard 15.82:1 — against the ASCII terrain measured
+  by the identical probe on the same machine: 6.91 / 12.58 / 11.90 / 3.37. Phone at 390×844: sub
+  7.40:1, h1 13.23:1 (terrain 6.52 / 10.80). The statcard's jump is the **dark frost** described under
+  the hero layout below, not the field.
   `test-contrast.mjs` does **not** cover any of this; it only checks token pairs.
-  The method is: inject CSS making the hero type transparent, screenshot several frames, measure each
-  type rect's backdrop with `sharp`. The travelling light moves between frames, so a single reading is
-  not trustworthy. Two traps: `.hero__h1 em` and the statcard's inline-styled SVG carry their own
-  colour and survive a naive `color: transparent`, so they get measured as "backdrop" and the numbers
-  come out meaningless; and the frost panel must **stay**, because the statcard text genuinely sits on
-  it. Compare mean against mean — the worst-pixel column is a single hot mark behind a letter stroke
-  and reads ~1.3:1 on every version of this shader, including the ones that shipped.
+  The method is: read the type rects and their computed colours, inject CSS making the hero type
+  transparent, screenshot several frames, measure each rect's backdrop with `sharp`. The travelling
+  charge moves between frames, so a single reading is not trustworthy. Three traps: `.hero__h1 em` and
+  the statcard's inline-styled SVG carry their own colour and survive a naive `color: transparent`; the
+  frost panel and the `.btn` fill must **stay**, because their text genuinely sits on them; and read the
+  computed colours *before* injecting the probe CSS or they all come back transparent. Compare mean
+  against mean — the worst-pixel column is a single hot mark behind a letter stroke and reads ~1.3:1 on
+  every version of this shader, including the ones that shipped.
 - **`.hero`'s CSS fallback gradient must track the shader's ground.** It is the no-WebGL and
-  lost-context path, and if it still said bronze that path would look like a different site.
+  lost-context path, and its warm lift sits where the bus and its smoke collect.
 - **It runs off `gsap.ticker`**, which `scroll.ts` already drives in lockstep with Lenis. Do not open a
   second rAF loop; one clock is what keeps it feeling attached to the smooth scroll.
 - **The canvas must never set its own transform** — `reveal.ts` scrubs `yPercent` on `.hero__slot` for
   the scroll parallax and the two would fight.
 - **Reduced motion** renders exactly one frame, and takes `preserveDrawingBuffer` — without it that
   frame vanishes on the next re-raster.
-- **Two perf governors.** `MAX_PIXELS` (5.5e6) caps total work, set from a GPU timer query: this
-  shader costs ~2.75ms per megapixel (measured at 2.07 / 3.69 / 4.95 MP, all within 1% — it is
-  genuinely linear in fill), so 5.5e6 is the largest buffer that fits a 16.7ms frame. Re-measure
-  whenever the skyline walk or the flow noise changes; the octave count in `flowAngle` is the single
-  biggest term. History: six line families cost 3.07ms/MP → 5.0e6, one family 2.54 → 6.0e6, the mark
-  grid 2.75 → 5.5e6. At 5.5e6 a 3440-wide ultrawide renders at ~95%, which is invisible next to the
-  flow texture that paid for it. It binds only at the top end. The frame-time ladder is the backstop and only steps
-  **down**, on frames between 24ms and 300ms. Both bounds matter: below 24ms you are marking healthy
-  60fps frames as slow, and above 300ms you are not measuring the GPU at all — Chrome throttles
-  occluded windows to ~1fps without ever setting `document.hidden`, and without the upper bound the
-  ladder quietly degrades the render while nobody is looking at it. It also ignores the first 90
-  frames, since the load-time burst would otherwise do the same.
+- **Two perf governors.** `MAX_PIXELS` (4.4e6) caps total work, set from a GPU timer query: this shader
+  costs **3.795ms per megapixel** (measured at 2.01 / 3.69 / 5.01 MP, all within 0.1% — it is genuinely
+  linear in fill), so 4.4e6 is the largest buffer that fits a 16.7ms frame. That is **down from the
+  terrain's 5.5e6 and it is a real cost**: a 1600×900 window on a 2× display renders at ~78% where the
+  terrain managed 88%, and a 3440-wide ultrawide at ~85% against 95%. A 1× desktop and a phone both
+  still render 1:1. Advection is more expensive than a mark grid; the direction was chosen knowing that.
+  History: six line families 3.07ms/MP → 5.0e6, one family 2.54 → 6.0e6, the mark grid 2.75 → 5.5e6,
+  this 3.795 → 4.4e6.
+  **Do not re-litigate the optimisation without the timer.** Measured at zero or worse: splitting the
+  dead slope out of the routing (the compiler already eliminated it), merging the three per-run loops
+  into one, a uniform branch around the pointer terms, and a 3σ early-out inside `busNear` (5% *slower*
+  — the branch defeats the loop unrolling). Measured faster and rejected on looks: three advection
+  samples (beading) and a sin-based hash (directional streaking). The noise is ~40% of the frame and
+  almost nothing else registers.
+  The frame-time ladder is the backstop and only steps **down**, on frames between 24ms and 300ms. Both
+  bounds matter: below 24ms you are marking healthy 60fps frames as slow, and above 300ms you are not
+  measuring the GPU at all — Chrome throttles occluded windows to ~1fps without ever setting
+  `document.hidden`, and without the upper bound the ladder quietly degrades the render while nobody is
+  looking at it. It also ignores the first 90 frames, since the load-time burst would otherwise do the
+  same.
+
+### The hero layout is composed around the field
+
+Three things in [os-site.css](web/src/styles/os-site.css) belong to the hero composition, not to the
+generic component they look like:
+
+- **`.hero .statcard` overrides the `--frost-*` tokens to a dark fill.** `--frost-fill` is a *light*
+  tint, so over a dark hero the statcard sat as a pale grey panel with near-white text on it — the
+  weakest type pairing on the page at 3.37:1. Dark-on-dark takes it to 15.82:1 and it reads as smoked
+  glass over the field rather than as a sticker on top of it. Scoped to `.statcard`, so the CTA pill is
+  untouched, and the `@supports not (backdrop-filter)` fallback needs its own dark override or the
+  generic near-opaque *light* tint undoes it.
+- **`.hero__veil` is a wedge, not a band.** A flat full-width gradient is invisible over a still field
+  and is the thing that looks pasted over a moving one, because it is the only part of the frame that
+  never changes. It is now a wedge anchored under the type column plus a much lighter global floor, and
+  it re-centres at ≤820px where the copy stops being a column.
+- **`.hero`'s own background** is the no-WebGL fallback described above.
 
 ## ⚠ Outstanding before launch — privacy policy
 

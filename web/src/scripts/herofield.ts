@@ -11,52 +11,60 @@
  *
  * ---- what this draws ----
  *
- * An ASCII terrain: a layered mountain silhouette rendered as marks on a
- * character grid, on a two-tone terminal palette.
+ * Digital smoke drifting through wiring. A bus of hard routed traces crosses the
+ * upper half of the frame; smoke sheds off them and rises, railing along a trace
+ * where it runs close to one and tearing loose where the trace kinks.
  *
- *   1. A CHARACTER GRID with a constant row count. Everything that decides what
- *      to draw is evaluated at the CELL CENTRE, never at the fragment, and that
- *      single substitution is what makes this read as character art rather than
- *      as a topographic map. Constant rows rather than a constant cell size in
- *      pixels means a larger display draws the same composition more sharply
- *      instead of drawing more and smaller marks, which is the whole point here.
- *   2. FOUR DEPTH RANGES. Each skyline comes from the same piecewise-LINEAR
- *      triangular-lattice noise the flow does, so the silhouette is faceted; the
- *      nearest range whose skyline sits above a cell claims it, and that early
- *      exit is the occlusion. Ranges further back sit higher, flatter, fainter.
- *      A cell above every skyline is sky.
- *   3. ONE MARK PER CELL: a capsule in cell-local device pixels, oriented along
- *      the flow and quantised to a handful of angles. Its length carries the
- *      local density, and at length zero it degenerates to the empty-cell dot —
- *      one primitive for the whole vocabulary, no branch, no threshold.
- *   4. Light travels the field. Each cell hashes its own brightness on a cubic
- *      tail and its own pulse phase, and each range is offset so the wave never
- *      sweeps all four in unison.
- *   5. Nodes are radial fans the marks turn to follow. They are drawn, never
- *      lit — there is no bloom anywhere in this shader.
+ *   1. A BUS of five routed runs, each a mostly-horizontal staircase with two 45
+ *      degree steps. Charge travels each run leftward on its own phase, and each
+ *      run terminates at its own x — the lower ones soonest, so the cascade opens
+ *      out and leaves the headline's corner clear.
+ *   2. A DIVERGENCE-FREE VELOCITY FIELD from a stream function: v = rot90(grad
+ *      psi). Divergence-free is not decoration — a field with sinks piles smoke
+ *      into blobs, and blobs are what makes procedural smoke look like fog.
+ *   3. SMOKE BY BACKWARD ADVECTION. From each fragment, walk backwards along that
+ *      velocity and ask what was there. The density source is the bus itself, so
+ *      the smoke is not an independent layer that happens to sit near the wiring:
+ *      it is the wiring, transported. A fragment high above the bus backtracks
+ *      down into it and picks up density, which is where the plumes come from.
+ *   4. The velocity is BENT TOWARD A RUN near one, so flow rails along a trace.
+ *      At a 45 degree kink the alignment turns faster than the advection path
+ *      does, and the smoke tears off — the shed at the junctions is not authored,
+ *      it falls out of the coupling.
+ *   5. The pointer injects a vortex and a push into the same field, and energises
+ *      the charge on whichever run it is near, downstream only.
  *
- * Oriented marks cannot close into a loop, and that lifts the constraint which
- * shaped every earlier version of this file: an extremum in a coordinate whose
- * iso-lines you draw IS a closed contour, so node strength had to stay tiny and
- * the anisotropy enormous to keep rings out of the frame. Nothing draws a scalar
- * field any more, so the fans can be as strong as the reference shows and the
- * flow is free to swirl.
+ * ---- why the advection is shaped this way ----
+ *
+ * Real iterated advection is impossible here and there is no point pretending
+ * otherwise: it needs state carried between frames, so a feedback texture, a
+ * second target and a second program. The one-pass substitute is to walk
+ * backwards through an ANALYTIC field per fragment.
+ *
+ * The naive form of that re-evaluates the velocity at every step, which is three
+ * taps of an fbm per step and puts this shader at roughly twice the cost of the
+ * terrain it replaces — straight into the resolution ladder, which is the blur
+ * this whole file exists to avoid. So the velocity is evaluated ONCE and then
+ * rotated and shrunk analytically along the path: a logarithmic spiral arc. The
+ * streaks curve, which is the part that reads as advected, and the field costs
+ * one evaluation. Do not "improve" this by sampling the flow per step without
+ * re-measuring; it is the single largest term in the frame.
  *
  * ---- one pass ----
  *
  * Bloom was the only reason this ever had five passes, two HDR ping-pong targets
  * and a float-extension branch. Without it, everything is a single fullscreen
- * quad again, and the tonemap and grain happen inline at the end. Accumulation
- * is still in linear light: doing it in gamma space is what makes bright areas
- * go chalky grey instead of hot, and that is a physical error, not a taste.
+ * quad, and the tonemap and grain happen inline at the end. Accumulation is still
+ * in linear light: doing it in gamma space is what makes bright areas go chalky
+ * grey instead of hot, and that is a physical error, not a taste.
  *
  * ---- behaviour ----
  *
  *   - Runs off gsap.ticker, which scroll.ts already drives in lockstep with
  *     Lenis. One clock for the page — a second rAF loop is what makes canvas
  *     work feel detached from smooth scroll.
- *   - The pointer bends the field, and drags a short wake behind it. All input
- *     is lerped, never applied raw.
+ *   - The pointer bends the field and drags a short wake behind it. All input is
+ *     lerped, never applied raw.
  *   - Reduced motion renders exactly one frame and never registers a ticker.
  *   - No WebGL2, or a lost context, falls back to the CSS gradient on .hero.
  *
@@ -86,57 +94,39 @@ uniform float uWake;        // decaying wake strength
 
 out vec4 fragColor;
 
-const float PI = 3.14159265;
-
 /* Palette, LINEAR — the sRGB values in the comments are the authored colours,
    these are those raised to 2.2. Every mix below happens in linear light, so
    never paste sRGB values in here.
 
-   Two tones and almost nothing between them. GROUND is a near-flat dark warm,
-   PHOSPHOR is the single mark colour: an amber sitting between --timber and
-   --accent-warm, deliberately NOT the near-white of --on-img so the marks never
-   compete with the headline sitting on top of them. */
+   PHOSPHOR is the trace colour: an amber between --timber and --accent-warm,
+   deliberately NOT the near-white of --on-img so the wiring never competes with
+   the headline over it. SMOKE is dimmer again and more desaturated, and its
+   ceiling is the number that decides the type contrast — the headline sits on
+   whatever the smoke leaves behind. */
 const vec3 GROUND_L = vec3(0.0094, 0.0066, 0.0040); /* #1A1611 */
 const vec3 LIFT_L   = vec3(0.0330, 0.0250, 0.0165); /* #302820, top of frame  */
-const vec3 PHOS_L   = vec3(0.8126, 0.4884, 0.2120); /* #E8B87E, the mark tone */
+const vec3 PHOS_L   = vec3(0.8126, 0.4884, 0.2120); /* #E8B87E, the trace tone */
+const vec3 SMOKE_L  = vec3(0.0420, 0.0320, 0.0212); /* dim desaturated warm    */
 
-/* The character grid. A CONSTANT ROW COUNT, not a constant cell size in pixels:
-   a larger display then draws the same composition more sharply rather than
-   drawing more and smaller marks, so the layout stops depending on the display
-   at all. ASPECT is the terminal cell ratio, taller than it is wide.
+/* ---- the bus ----
+   Five runs. RY is where a run starts at the left, RK packs its two 45 degree
+   steps as (x1, dy1, x2, dy2) with x as a fraction of the half-width, so the
+   routing rescales with the frame instead of walking off the side of a phone.
+   Every step is positive, so a run climbs to the right — read right to left, the
+   way the charge travels, they descend.
 
-   COLS is the floor that keeps that honest on a portrait phone. Rows alone set
-   the cell from the height, and on a tall narrow canvas that leaves about fifty
-   columns — coarse enough that the marks stop reading as text and start reading
-   as tiles. Taking whichever of the two gives the smaller cell means the grid
-   stays fine in both directions, and on any landscape frame the row count still
-   binds, so the desktop composition is untouched. */
-const float ROWS   = 72.0;
-const float COLS   = 78.0;
-const float ASPECT = 0.55;
-
-/* Orientations are quantised, which is most of why this reads as character art.
-   A stroke is symmetric under 180 degrees, so the quantiser runs over PI, and
-   SEG = 8 gives 22.5 degree steps. SEG = 4 is the literal dash/slash/pipe set
-   and reads more like a terminal, but larger steps pop harder as the field
-   turns, and it turns continuously. */
-const float SEG = 8.0;
-
-/* Depth ranges, nearest first. */
-const int LAYERS = 4;
-
-/* Burst nodes: xy anchor, z = strength. Marks turn to fan radially out of these;
-   nothing glows. Each wanders on its own slow path so none of them sit still.
-   They sit on and above the skyline, and the bottom-left stays deliberately
-   empty: the headline is there. */
-const int NODES = 6;
-const vec3 NODE[6] = vec3[6](
-  vec3(-0.68, 0.02, 0.65),
-  vec3(-0.30, 0.13, 0.50),
-  vec3( 0.03, 0.00, 0.70),
-  vec3( 0.34, 0.15, 0.55),
-  vec3( 0.60, 0.04, 0.85),
-  vec3( 0.79, 0.17, 0.60)
+   The band sits in the upper half on purpose. The headline is a column in the
+   lower left and the statcard is a panel in the lower right; putting the sources
+   above both of them means the bottom of the frame is quiet by construction
+   rather than by clawing density back with the contrast guard. */
+const int RUNS = 5;
+const float RY[5] = float[5](0.055, 0.130, 0.205, 0.285, 0.360);
+const vec4  RK[5] = vec4[5](
+  vec4(-0.34, 0.055,  0.46, 0.040),
+  vec4( 0.12, 0.048, -0.62, 0.032),
+  vec4(-0.06, 0.052,  0.68, 0.045),
+  vec4( 0.52, 0.040, -0.28, 0.050),
+  vec4( 0.30, 0.046, -0.70, 0.038)
 );
 
 float hash21(vec2 p) {
@@ -145,59 +135,191 @@ float hash21(vec2 p) {
   return fract((p3.x + p3.y) * p3.z) - 0.5;
 }
 
-/* Piecewise-LINEAR triangular-lattice noise.
- *
- * Skew into the simplex grid, pick the triangle, and blend the three corner
- * values by their barycentric weights WITHOUT smoothing them. That last part is
- * the entire point: the usual f*f*(3-2f) is what rounds contours off. Left
- * linear, the field is planar inside each triangle, so its iso-lines are
- * straight segments that only kink where they cross a lattice edge.
- *
- * Keep the octave count low and the base frequency coarse — every extra octave
- * subdivides the facets, and enough of them converge back on a smooth field.
- */
-float ptri(vec2 p) {
-  const float K1 = 0.366025404; // (sqrt(3) - 1) / 2
-  const float K2 = 0.211324865; // (3 - sqrt(3)) / 6
-  vec2 s = p + (p.x + p.y) * K1;
-  vec2 i = floor(s);
-  vec2 f = s - i;
-  float m = step(f.y, f.x);          // 1 -> lower triangle
-  vec2  o = vec2(m, 1.0 - m);
-  float w1 = abs(f.x - f.y);
-  float w2 = mix(f.x, f.y, m);
-  float w0 = 1.0 - w1 - w2;
-  // Corners are unskewed only to hash them; the affine skew preserves linearity.
-  return w0 * hash21(i) + w1 * hash21(i + o) + w2 * hash21(i + 1.0);
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
 }
 
-float fbmTri(vec2 p, int oct) {
+/* Value noise with a quintic fade — C2, so its gradient is C1.
+ *
+ * Every previous version of this file used a piecewise-LINEAR triangular
+ * lattice, deliberately unsmoothed, because a planar field has straight
+ * iso-lines and straight iso-lines are what made the terrain and the weave look
+ * faceted rather than rounded. That virtue does not survive the change of
+ * subject, and the reason is worth writing down because it looks like a
+ * regression otherwise:
+ *
+ *   - A piecewise-linear field has a piecewise-CONSTANT gradient. Used as a
+ *     stream function it gives every fragment inside a lattice triangle the
+ *     identical velocity, so they all backtrack along the same vector and stamp
+ *     the source in the same place. The frame fills with flat-shaded polygons
+ *     with hard straight edges. This was tried; it is unmistakable.
+ *   - Rendered as a level set rather than as iso-lines, a planar field IS a flat
+ *     polygon. The faceting was never visible as facets before because nothing
+ *     ever drew its levels.
+ *
+ * So the lattice noise is gone, and the crease it used to provide comes from the
+ * ridged transform below instead, which puts sharp creases on the zero set of a
+ * smooth field rather than on the edges of a lattice.
+ */
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = p - i;
+  vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float d = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+/* Value AND its exact gradient, as (value, d/dx, d/dy).
+ *
+ * The stream function needs a gradient, and the obvious way to get one is three
+ * taps of the fbm and two subtractions. That is 3x the noise for a derivative
+ * that is only approximate. Value noise on a lattice is a bilinear form in the
+ * faded coordinates, so its derivative is closed-form: the same four corner
+ * hashes, plus the derivative of the quintic, for about a third more work than
+ * the value alone. Measured, the flow term was 6 noise evaluations a fragment
+ * and is now 2 — and the gradient is exact rather than epsilon-limited. */
+vec3 vnoiseD(vec2 p) {
+  vec2 i = floor(p), f = p - i;
+  vec2 u  = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  vec2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float d = hash21(i + vec2(1.0, 1.0));
+  float k1 = b - a, k2 = c - a, k3 = a - b - c + d;
+  return vec3(a + k1 * u.x + k2 * u.y + k3 * u.x * u.y,
+              du.x * (k1 + k3 * u.y),
+              du.y * (k2 + k3 * u.x));
+}
+
+/* Every octave is ROTATED as well as scaled. Value noise sits on a square
+   lattice and its features line up with the axes; stack octaves on the same
+   axes and the alignment reinforces instead of averaging out, which draws tall
+   axis-aligned rectangles across the frame. The ridged transform below makes
+   that far worse, because it turns the lattice's gentle bias into a crease.
+   One rotation per octave decorrelates them and it is free. */
+const mat2 ROT = mat2(0.80, 0.60, -0.60, 0.80);
+
+/* Ridged fbm. 1 - |2n| peaks on the zero set of the noise, which is a curve, so
+   squaring it leaves thin sharp filaments rather than blobs — the crease the
+   faceted lattice used to give, on a field smooth enough to differentiate. */
+float fbmR(vec2 p, int oct) {
   float a = 0.5, s = 0.0;
-  for (int i = 0; i < oct; i++) { s += a * ptri(p); p *= 2.07; a *= 0.5; }
+  for (int i = 0; i < oct; i++) {
+    float n = 1.0 - abs(vnoise(p) * 2.0);
+    s += a * n * n;
+    p = ROT * p * 2.11; a *= 0.5;
+  }
   return s;
 }
 
-/* The skyline of one range, in canvas uv-y.
+/* The centreline of one run at x, plus its slope.
  *
- * Ranges further back sit higher AND swing harder. That ordering is the one that
- * matters and it is easy to get backwards: aerial perspective says distant
- * things are fainter, not that they are flatter, and the range that meets the
- * sky is the one whose profile the eye reads as the silhouette. Give the back
- * ranges the small amplitude and the skyline goes flat, the frame loses its
- * drama, and no amount of tuning below will put it back.
+ * Two clamped ramps, each of width |dy| so the connector is exactly 45 degrees
+ * on screen — the field coordinates are isotropic, both axes divided by the
+ * canvas height, so equal run and rise really is 45 and not merely close.
  *
- * The bases are spaced tighter than the amplitudes, so the profiles interleave:
- * a far peak pushes up between two nearer ones and the nearer range shows
- * through wherever it dips, which is where the depth comes from.
+ * The slope comes back because the perpendicular distance to a line of gradient
+ * m is the vertical distance over sqrt(1 + m*m). Skip that and the diagonal
+ * connectors draw sqrt(2) times too thick, which is exactly the join that is
+ * meant to look machined. */
+/* The centreline alone. busNear calls this twenty times a fragment and never
+   looks at the slope, and the slope is four smoothsteps — worth about a fifth of
+   the frame on its own if the compiler does not manage to eliminate it, which is
+   not a thing to leave to the compiler at this call count. */
+float runMid(float x, int i, float hw) {
+  vec4 k = RK[i];
+  k.yw *= clamp(hw / 0.889, 0.55, 1.0);
+  return RY[i]
+       + k.y * clamp((x - k.x * hw) / abs(k.y), 0.0, 1.0)
+       + k.w * clamp((x - k.z * hw) / abs(k.w), 0.0, 1.0);
+}
+
+float runY(float x, int i, float hw, out float slope) {
+  vec4 k = RK[i];
+  /* The step HEIGHTS rescale with the frame too, not just the kink positions.
+     Leave them absolute and a portrait frame routes the same climb over a third
+     of the horizontal distance, so the bus stops reading as a bus and starts
+     reading as a zigzag — the connectors dominate and the flat runs between them
+     nearly vanish. Authored against a 16:9 half-width, floored so the steps do
+     not disappear entirely. */
+  k.yw *= clamp(hw / 0.889, 0.55, 1.0);
+  float w1 = abs(k.y), w2 = abs(k.w);
+  float x1 = k.x * hw, x2 = k.z * hw;
+  float t1 = clamp((x - x1) / w1, 0.0, 1.0);
+  float t2 = clamp((x - x2) / w2, 0.0, 1.0);
+  /* The slope has to ramp on and off SMOOTHLY, over most of the ramp, not
+     switch at its ends. It feeds 1/sqrt(1+m*m), so a switch moves the distance
+     metric by 30% within a fragment or two — and anything derived from it is
+     evaluated all along an advection path, so a step there draws a hard vertical
+     seam down the entire height of the frame at every kink. Five runs, four ramp
+     ends each, and the frame is barred like a cage. Ramping over a third of the
+     ramp on each side rounds the join at a scale below the trace width and the
+     seams go. */
+  slope = sign(k.y) * (smoothstep(0.0, 0.35, t1) - smoothstep(0.65, 1.0, t1))
+        + sign(k.w) * (smoothstep(0.0, 0.35, t2) - smoothstep(0.65, 1.0, t2));
+  return RY[i] + k.y * t1 + k.w * t2;
+}
+
+/* How close q is to the bus, as a smoke source.
  *
- * The profile is fbmTri, so the silhouette is faceted the same way the flow is,
- * and each range drifts at its own rate so the skyline never locks into one
- * shape. This is called once per range in the ownership walk and once more for
- * the slope, so keep it cheap — two octaves is the budget. */
-float ridge(float x, float lay, float t) {
-  float amp = 0.10 + lay * 0.075;
-  return 0.395 + lay * 0.070
-       + amp * fbmTri(vec2(x * (2.40 + lay * 0.55) + t * (1.4 - lay * 0.25), lay * 5.7 + 2.3), 2);
+ * This is the density field the advection samples, and it is the whole reason
+ * the smoke and the wiring read as one thing: there is no independent smoke
+ * field. What drifts through the frame is this, transported.
+ *
+ * The sheath is TIGHT — about a thirtieth of the frame height. A wide one needs
+ * no transport to be visible, so it just sits there as a band around the wires
+ * and the whole exercise collapses into a fog card. Tight means the only way
+ * smoke reaches the top of the frame is by being carried there. */
+float busNear(vec2 q, float hw, float lift, float k, float t) {
+  float m = 0.0;
+  for (int i = 0; i < RUNS; i++) {
+    /* A run does not smoke evenly along its length. An even source is a curtain
+       — it was one, and it draped over the whole upper half and buried the
+       wiring behind it. It smokes WHERE THE CHARGE IS, on the same phase the
+       trace draws its pulse from, one term behind so the plume trails the pulse
+       rather than sitting on it. Nothing new is evaluated for this: it is the
+       charge, read a second time. */
+    float emit = 0.22 + 0.95 * smoothstep(0.30, 1.0,
+      sin((hw - q.x) * 5.6 - t * 0.85 + float(i) * 2.3 - 0.9) * 0.5 + 0.5);
+    /* Vertical distance, NOT perpendicular distance. Correcting for the slope
+       would make the sheath sqrt(2) times narrower over the 45 degree segments,
+       which is invisible on something this soft — and it would drag the slope
+       term, and every discontinuity in it, into a quantity that is evaluated at
+       four points along an advection path. The trace itself is drawn with the
+       correction because there a 40% width error is the whole difference between
+       a machined join and a fat one. */
+    float d = q.y - (runMid(q.x, i, hw) + lift);
+    m = max(m, exp(-d * d * k) * emit);
+  }
+  return m;
+}
+
+/* Divergence-free velocity from a stream function. v = (dpsi/dy, -dpsi/dx) has
+   zero divergence identically, so the flow has no sinks for smoke to pile into —
+   which is the difference between drifting sheets and a field of soft blobs.
+   Two octaves, exact gradients, evaluated ONCE per fragment. */
+const float FS = 1.62;
+vec2 flow(vec2 q, float t) {
+  vec2  w = q * FS + vec2(t * 0.021, -t * 0.013);
+  vec2  g = vec2(0.0);
+  mat2  m = mat2(1.0);   // accumulated domain transform, for the chain rule
+  vec2  pp = w;
+  float a = 0.5;
+  for (int i = 0; i < 2; i++) {
+    vec3 n = vnoiseD(pp);
+    // Each octave is read at m*w, so its contribution to d/dw is (dn/dpp) * m.
+    g += a * (n.yz * m);
+    m  = 2.07 * ROT * m;
+    pp = 2.07 * ROT * pp;
+    a *= 0.5;
+  }
+  g *= FS;               // and w = q * FS
+  return vec2(g.y, -g.x);
 }
 
 /* Highlight-only shoulder. Identity below K, then a smooth C1 roll to 1.0.
@@ -209,220 +331,203 @@ vec3 tone(vec3 x) {
   return mix(x, s, step(vec3(K), x));
 }
 
-float hash12(vec2 p) {
-  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-  p3 += dot(p3, p3.yzx + 33.33);
-  return fract((p3.x + p3.y) * p3.z);
-}
-
 void main() {
-  float halfW = 0.5 * uRes.x / uRes.y;
-  float t     = uTime * 0.045;
-  float uvy   = gl_FragCoord.y / uRes.y;
+  float hw  = 0.5 * uRes.x / uRes.y;
+  float t   = uTime;
+  vec2  p   = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
+  float uvy = gl_FragCoord.y / uRes.y;
 
-  /* --- the character grid ---
-     Everything that decides WHAT to draw is evaluated at the cell centre, never
-     at the fragment. That one substitution is the quantisation, and it is what
-     separates character art from a swept field. Only the ground gradient and the
-     grain read the fragment, because both want to stay smooth across a cell. */
-  float cellH = min(uRes.y / ROWS, uRes.x / (ASPECT * COLS));
-  vec2  cell  = vec2(cellH * ASPECT, cellH);
-  vec2  ci    = floor(gl_FragCoord.xy / cell);
-  vec2  cf    = fract(gl_FragCoord.xy / cell) - 0.5;
-  vec2  cpx   = (ci + 0.5) * cell;
-  /* Cell centre in field coords: y in [-0.5, 0.5], x scaled by aspect. */
-  vec2  pc    = (cpx - 0.5 * uRes) / uRes.y;
-  float uvyc  = cpx.y / uRes.y;
+  /* A portrait frame is a different composition, not a cropped one: the copy
+     stops being a column and spans the width, and the statcard drops below it
+     rather than sitting beside it, so both take far more of the height. The bus
+     lifts out of the way rather than the guard fighting it afterwards. */
+  float narrow = 1.0 - smoothstep(0.55, 0.80, hw);
+  float lift   = 0.10 * narrow;
 
-  /* --- which range owns this cell ---
-     Walk front to back and stop at the first skyline sitting above the cell. The
-     early exit IS the occlusion: a range behind a nearer one never gets the
-     chance to claim the cell, so the silhouettes stack into real depth for
-     nothing. A cell above every skyline is sky, and draws only its empty dot. */
-  float lay = -1.0;
-  float h   = 0.0;
-  for (int i = 0; i < LAYERS; i++) {
-    float fi = float(i);
-    float hi = ridge(pc.x, fi, t);
-    if (uvyc < hi) { lay = fi; h = hi; break; }
+  /* ---- pointer, as a disturbance in the flow ----
+     A vortex plus a push along the recent travel. Both are added to the velocity
+     rather than to the density, so the cursor moves smoke that is already there
+     instead of painting new smoke — which is the difference between parting it
+     and drawing on it. */
+  /* Gated on the uniform, not on anything per-fragment. uPointerAmt is the same
+     for every fragment in the draw, so this is uniform control flow and the
+     whole block is skipped for free — which is the common case on a desktop and
+     the only case on a phone, where there is no fine pointer at all. It takes
+     four exp calls and a normalize out of every fragment when nothing is
+     hovering. */
+  bool  hover = uPointerAmt > 0.002;
+  vec2  swirl = vec2(0.0);
+  vec2  push  = vec2(0.0);
+  if (hover) {
+    vec2  pd  = p - uPointer;
+    float pr2 = dot(pd, pd);
+    swirl = vec2(-pd.y, pd.x) * exp(-pr2 * 11.0) * uPointerAmt * 2.6;
+    push  = uPointerVel * exp(-pr2 * 14.0) * uWake * 0.55;
   }
 
-  /* Per-cell identity, stable because it hashes the cell index. */
-  float hb  = hash12(ci + 0.5);
-  float jit = fract(hb * 17.0);
+  /* ---- velocity at this fragment ---- */
+  /* The turbulent term has to be COMPARABLE to the drift, not a perturbation on
+     it. Scaled down to a tenth it averages out over the length of an advection
+     path and every fragment ends up backtracking along nearly the same vector,
+     which draws the source once, softly, everywhere — a wash. At parity the
+     paths diverge and the plumes acquire shape. */
+  vec2 v = flow(p, t) * 0.52 + vec2(-0.24, 0.33) + swirl + push;
 
-  vec2  dir  = vec2(1.0, 0.0);
-  float dens = 0.0;
+  /* ---- one walk over the runs ----
+     The flow alignment, the drawn trace and the sheath the smoke starts from all
+     want the same five centrelines at the same x. Computed in three separate
+     loops that is fifteen evaluations of the routing per fragment for five
+     distinct answers, and the routing is the second largest term in the frame
+     after the noise. One loop, kept.
 
-  if (lay >= 0.0) {
-    /* --- flow direction ---
-       Marks run parallel to the range silhouette, so a slope reads as a slope,
-       and swing off a noise field on top of that so the flow is organic rather
-       than a set of parallel rules.
+     Bending the flow toward a nearby run is the coupling. The alignment falls
+     off over about a tenth of the frame height, so a fragment near a trace
+     inherits that trace's direction and one between two traces is back on the
+     open field. */
+  float aW = 0.0;
+  vec2  aD = vec2(0.0);
+  float trace = 0.0;
+  float wTrace = max(0.9, 0.0016 * uRes.y);
 
-       This is an ANGLE field, not the gradient of a scalar one. Nothing draws a
-       scalar field any more, only marks, so there is no reason to build one and
-       differentiate it: a direct angle costs a single fbm where a gradient costs
-       three taps of one, and the angle is quantised immediately afterwards so
-       the extra precision would have been thrown away regardless. */
-    const float E = 0.006;
-    float slope = (ridge(pc.x + E, lay, t) - h) / E;
-    float depth = max(h - uvyc, 0.0);
-    /* Three octaves, and the third is not optional however much it looks like
-       cheap detail under a 22.5 degree quantiser. It contributes roughly plus or
-       minus 11 degrees, which straddles a quantisation step, so it is precisely
-       what scatters neighbouring cells into adjacent bins. Drop it and the marks
-       comb into long uniform ribbons: smoother, cheaper, and no longer terrain.
-       It costs about 10% of the frame and it is worth it. */
-    float n = fbmTri(vec2(pc.x * 1.45 + t * 1.6, depth * 3.2 + lay * 6.1), 3);
-    /* Both the silhouette slope and the swing fall away with depth into the
-       flank, so marks hug the skyline where they meet it and settle toward long
-       horizontal runs far below it — which is what the foreground is. */
-    float hug = exp(-depth * 2.6);
-    float a = atan(slope) * hug + (0.42 + 2.55 * hug) * n;
-    dir = vec2(cos(a), sin(a));
+  for (int i = 0; i < RUNS; i++) {
+    float sl;
+    float ry = runY(p.x, i, hw, sl) + lift;
+    float inv = inversesqrt(1.0 + sl * sl);
+    float da  = (p.y - ry) * inv;
 
-    /* --- density ---
-       A TIGHT bright edge immediately under the skyline over a much softer body.
-       The two terms are what make the depth legible: a range reads as a distinct
-       plane because its crest is a hard line against the fainter flank of the
-       range behind it, not because the silhouettes differ. One smooth falloff
-       instead of two blurs every boundary and the whole set collapses back into
-       a single wash.
+    float w = exp(-da * da * 90.0);
+    // Charge runs leftward, so the tangent points that way too.
+    aD += normalize(vec2(-1.0, -sl)) * w;
+    aW += w;
 
-       The nearest range also keeps a foreground floor, biased to the right. That
-       is where the long horizontal runs come from, and biasing it is what keeps
-       the lower-left open for the headline — shaping the composition around the
-       type rather than leaning on the contrast guard to claw it back. */
-    float edge  = 1.0 - smoothstep(0.0, 3.2 / ROWS, depth);
-    float flank = 0.62 * exp(-depth * 1.4);
-    float fore  = 0.46 * smoothstep(-0.30, 0.70, pc.x / halfW) * step(lay, 0.5);
-    /* The silhouette line recedes far less than the body it encloses. That is
-       how landscape line-work reads depth: every ridge stays drawn, while the
-       mass behind each one drops away. Fading both together washes the four
-       ranges into one band, because a back crest then matches a front flank. */
-    float fade = exp(-lay * 0.26);
-    dens = max(edge * (0.55 + 0.45 * fade), max(flank, fore) * fade);
+    /* Junction pads. The kink is where the routing does something, so it is
+       where a real board puts copper — and it doubles as the visual cue for the
+       point the smoke tears off. */
+    vec4 k = RK[i];
+    float a1 = (p.x - k.x * hw) * 26.0;
+    float a2 = (p.x - k.z * hw) * 26.0;
+    float pad = exp(-a1 * a1) + exp(-a2 * a2);
+    float ww = wTrace * (1.0 + 1.5 * pad);
+    float m  = 1.0 - smoothstep(ww - 0.6, ww + 0.6, abs(da) * uRes.y);
+
+    /* Each run ends at its own x. The lower runs stop soonest, so the bus opens
+       out toward the left and the headline's corner is the emptiest part of the
+       frame. */
+    float endx = (-0.90 + 0.16 * float(4 - i)) * hw;
+    m *= smoothstep(endx, endx + 0.22, p.x);
+
+    /* Charge, travelling left, each run on its own phase. */
+    float ph = (hw - p.x) * 5.6 - t * 0.85 + float(i) * 2.3;
+    float pulse = smoothstep(0.55, 1.0, sin(ph) * 0.5 + 0.5);
+
+    float ener = 0.0;
+    if (hover) {
+      /* The pointer energises the run it is nearest, and only downstream of
+         itself — the tail is six times longer to the left than to the right, so
+         the brightening reads as charge running away from the cursor rather than
+         as a lamp switched on under it. */
+      float du = p.x - uPointer.x;
+      float dyp = uPointer.y - ry;
+      ener = uPointerAmt * exp(-dyp * dyp * 70.0)
+           * exp(-du * du * (du > 0.0 ? 55.0 : 9.0));
+    }
+
+    trace += m * (0.26 + 0.85 * pulse * pulse + 1.10 * ener);
   }
+  trace = min(trace, 2.2);
 
-  /* --- bursts: direction and density, never light ---
-     A radial fan used to be the hardest thing in this shader. Iso-lines cannot
-     radiate from a point without a critical point there, and that critical point
-     draws as a ring, which is why node strength was capped at 0.20 and why an
-     earlier version had to build its rays in angle space. Marks have no such
-     constraint, so this is simply the direction they point. */
-  const float BURST = 1.30;
-  float bw = 0.0;
-  vec2  bd = vec2(0.0);
-  for (int i = 0; i < NODES; i++) {
-    float fi = float(i);
-    // Wandering, not orbiting: two incommensurate rates per axis so the path
-    // never closes and no node sits still.
-    /* Anchors are authored against a 16:9 half-width and rescaled to whatever
-       this frame actually is. Left in absolute field coords they do not travel:
-       a portrait phone sees only x within about +/-0.23, so five of the six fall
-       outside the frame and the sixth sits dead centre, directly behind the
-       headline. */
-    vec2 c = vec2(NODE[i].x * halfW / 0.889, NODE[i].y) + vec2(
-      0.085 * sin(uTime * 0.061 + fi * 1.7) + 0.045 * sin(uTime * 0.023 + fi * 4.1),
-      0.055 * cos(uTime * 0.048 + fi * 2.3) + 0.030 * cos(uTime * 0.019 + fi * 0.7)
-    );
-    vec2  dd = pc - c;
-    float r2 = dot(dd, dd);
-    /* Tight. A fan wide enough to be seen from across the frame is a fan that
-       overlaps its neighbours, and six overlapping fans are just noise. */
-    if (r2 > 0.11) continue;
-    float w = exp(-r2 * 42.0) * NODE[i].z;
-    bd += normalize(dd + vec2(1e-5)) * w;
-    bw += w;
+  aW = clamp(aW, 0.0, 1.0);
+  if (aW > 0.002) v = mix(v, normalize(aD) * (0.62 + 0.5 * aW), aW * 0.72);
+
+  /* ---- backward advection ----
+     Walk back along the velocity, turning it a little and shrinking it each step
+     so the path is an arc rather than a straight smear, and ACCUMULATE the
+     source along the way.
+
+     The accumulation is the part that matters. Sampling the source at one
+     backtracked point gives a displaced copy of the source, which is not a
+     trail — it is the same shape somewhere else. A trail is the integral of the
+     source along the path, so every step contributes and the weight decays
+     behind. That single difference is what turns a band around the wires into
+     something that streams off them. */
+  const float STEP   = 0.255;
+  const float THETA  = 0.21;
+  const float SHRINK = 0.92;
+  float cs = cos(THETA), sn = sin(THETA);
+
+  /* The path starts AT the fragment. Without that first sample the nearest
+     smoke to a wire is one whole step downwind of it, so the wires come out
+     scrubbed clean with the smoke hanging off to one side — two things again,
+     which is the failure this direction exists to avoid. The zeroth sample is
+     the sheath still attached to the trace and the rest is what has left it.
+
+     The sheath WIDENS along the path, and that is doing two jobs. Physically it
+     is diffusion: smoke that left the wire a while ago has spread. Practically
+     it is what keeps the trail continuous — the steps are far enough apart to
+     reach the top of the frame in four samples, which is much further than the
+     sheath is wide, so a constant width would draw the plume as a string of
+     separate beads. Widen it and consecutive samples overlap into one taper. */
+  vec2  q = p, vv = v;
+  float wid = 620.0, wgt = 1.0;
+  float smoke = busNear(q, hw, lift, wid, t);
+  for (int i = 0; i < 3; i++) {
+    q -= vv * STEP;
+    vv = vec2(vv.x * cs - vv.y * sn, vv.x * sn + vv.y * cs) * SHRINK;
+    wgt *= 0.74;
+    wid *= 0.42;
+    smoke += wgt * busNear(q, hw, lift, wid, t);
   }
+  smoke *= 0.50;
 
-  /* --- pointer: a fan of its own, plus a wake along its recent direction --- */
-  vec2  pd  = pc - uPointer;
-  float pr2 = dot(pd, pd);
-  float pA  = exp(-pr2 * 8.0) * uPointerAmt * 0.85;
-  bd += normalize(pd + vec2(1e-5)) * pA;
-  bw += pA;
-  float wk = exp(-pr2 * 12.0) * uWake * 0.55;
-  bd += normalize(uPointerVel + vec2(1e-5)) * wk;
-  bw += wk;
+  /* The carve is what makes it wisps rather than a plume.
+     It is sampled at the FAR end of the advection path, not at the fragment, so
+     neighbouring fragments read it at points that the flow has pulled apart —
+     the noise stretches along the streamlines by itself and never needs a
+     direction of its own. Three octaves, on the same faceted lattice, so the
+     strands crease rather than curve.
+     High contrast on purpose: a gentle multiply modulates smoke, it does not
+     cut it into strands, and modulated smoke is fog. */
+  const float F2 = 3.4;
+  float nz    = fbmR(q * F2 + vec2(t * 0.03, -t * 0.012), 3);
+  float carve = smoothstep(0.34, 0.78, nz);
+  smoke *= 0.10 + 1.65 * carve;
 
-  if (bw > 0.002) {
-    vec2 bn = normalize(bd + vec2(1e-6));
-    /* A mark is symmetric under 180 degrees, so an opposed pair has to be folded
-       onto the same side before blending or the two cancel into an arbitrary
-       direction, which shows up as a seam through the middle of every fan. */
-    if (dot(bn, dir) < 0.0) bn = -bn;
-    dir   = normalize(mix(dir, bn, clamp(bw * BURST, 0.0, 1.0)));
-    dens += bw * 0.45;
-  }
+  /* Smoke that left the bus earlier than the path reaches back. The advection
+     covers about a third of the frame height, and a plume that stops there reads
+     as a fringe on the wires rather than as something filling the frame. So the
+     bus also smears analytically: slow decay upward, fast decay downward,
+     because smoke rises and because the bottom of the frame is where the type
+     is. Same source, same carve, longer memory — not a second layer, and kept
+     well under the advected term so it can never become the thing you see. */
+  float above = p.y - (0.20 + lift);
+  float haze  = exp(-max(above, 0.0) * 1.7) * exp(-max(-above, 0.0) * 9.0);
+  smoke += 0.10 * haze * carve;
 
   /* Haze the extremes so the field has no visible edge, measured against the
      actual half-width so an ultrawide fades at its own edges. */
-  dens *= smoothstep(1.02, 0.62, abs(pc.x) / halfW);
+  float edge = smoothstep(1.02, 0.60, abs(p.x) / hw);
+  smoke *= edge;
+  trace *= edge;
 
-  /* A portrait frame is a different composition, not a cropped one: the copy
-     spans its whole width rather than sitting in a column, and the field has far
-     less room to breathe around it. So the guard stops being left-biased and the
-     whole field steps back. */
-  float narrow = 1.0 - smoothstep(0.55, 0.80, halfW);
-  dens *= mix(1.0, 0.52, narrow);
-  dens  = clamp(dens, 0.0, 1.0);
-
-  /* --- contrast guard ---
+  /* ---- contrast guard ----
      The headline, sub-label and CTA are light type over this, under .hero__veil.
-     On a dark ground that is a much easier position than it was on bronze, so
-     this is gentler than it needed to be before — but it is not gone. Do not
-     weaken it without re-running the contrast probe.
+     The composition already keeps the sources above them, so this is gentler
+     than the terrain needed — but it is not gone, because the flow is free to
+     wander down there and the guard is what stops one stray plume from taking a
+     line of the headline with it. Both extents are aspect-aware, and the
+     vertical one matters most: the copy is a column in the lower left of a
+     landscape frame and nearly the whole of a portrait one. */
+  float guard = 1.0 - 0.55
+    * mix(1.0 - smoothstep(-0.50, 0.55, p.x / hw), 1.0, narrow)
+    * (1.0 - smoothstep(0.06, mix(0.62, 0.96, narrow), uvy));
 
-     Both extents are aspect-aware, and the vertical one matters most: the copy
-     is a column in the lower-left of a landscape frame but nearly the whole of a
-     portrait one, so a band tuned to the desktop stops short and leaves the
-     phone headline sitting on bare field. */
-  float guard = 1.0 - 0.68
-    * mix(1.0 - smoothstep(-0.50, 0.55, pc.x / halfW), 1.0, narrow)
-    * (1.0 - smoothstep(0.06, mix(0.62, 0.96, narrow), uvyc));
+  smoke = clamp(smoke, 0.0, 1.0) * guard * mix(1.0, 0.82, narrow);
+  trace *= guard;
 
-  /* --- one mark per cell ---
-     Quantise the orientation, then draw a capsule in cell-local DEVICE PIXELS.
-
-     reach is the cell's half-extent along the mark direction, so a full-length
-     mark exactly spans its own cell and butts against its neighbours: the long
-     horizontal runs and the vertical columns are single-cell marks meeting end
-     to end, not long lines. At length zero the capsule degenerates to a dot,
-     which is the empty-cell mark — one primitive for the whole vocabulary, no
-     branch and no threshold.
-
-     Width is a fraction of the cell with a pixel floor, so the mark keeps its
-     apparent weight as the grid scales and never thins away on a short viewport.
-     There is no Nyquist fade here and none is needed: an earlier version drew
-     line families whose period could fall under 2px and moire viciously, but a
-     mark is cell-sized by construction and can never approach it. */
-  float ang = atan(dir.y, dir.x);
-  ang = floor(ang * (SEG / PI) + 0.5) * (PI / SEG);
-  vec2  d = vec2(cos(ang), sin(ang));
-  vec2  m = cf * cell;
-  float reach = 0.5 / max(abs(d.x) / cell.x, abs(d.y) / cell.y);
-  float L = reach * clamp(dens * (0.85 + 0.55 * jit), 0.0, 1.10);
-  float W = max(0.085 * cell.y, 0.9);
-  float r = length(vec2(max(abs(dot(m, d)) - L, 0.0), abs(dot(m, vec2(-d.y, d.x)))));
-  float mark = 1.0 - smoothstep(W - 0.6, W + 0.6, r);
-
-  /* Light travels the field. Each cell hashes its own brightness on a cubic tail
-     — a few hot, most faint — and its own pulse phase, and each range carries an
-     offset so the wave never sweeps all four in unison. The empty-cell dot sits
-     at a flat low value and never pulses: the sky in the reference is still. */
-  float along = pc.x * 5.0 + lay * 2.7 - uTime * 0.34;
-  /* The pulse floor has to sit high. Line families overlapped, so a low floor
-     still summed to a lit frame; one independent mark per cell does not, and the
-     same 0.55 that read as travelling light on lines reads as a dim speckle
-     here. The travelling part is the tail, not the base. */
-  float pulse = 0.86 + 1.40 * smoothstep(0.62, 0.98, sin(along + hb * 39.0) * 0.5 + 0.5);
-  float ink   = mix(0.10, (0.42 + 1.15 * hb * hb * hb) * pulse, dens);
-
-  /* --- assemble, in linear --- */
+  /* ---- assemble, in linear ---- */
   vec3 col = mix(GROUND_L, LIFT_L, smoothstep(-0.05, 1.05, uvy));
-  col += PHOS_L * (mark * ink * guard);
+  col += SMOKE_L * smoke;
+  col += PHOS_L * trace * 0.55;
 
   col = tone(col);
   col = pow(max(col, 0.0), vec3(1.0 / 2.2)); // linear -> sRGB
@@ -500,24 +605,40 @@ function init(): void {
      Two governors. A pixel budget caps total work; DPR alone is the wrong
      control at the top end, where a 5K panel at 2x asks for ~25M pixels a frame.
      Hard-edged line-work shows resolution loss far more readily than soft
-     gradients did, so this cap is set high — with bloom gone there are four
-     fewer passes to pay for, and the budget exists as a guard rail rather than
-     as the thing that normally binds.
+     gradients do, and this field has both: the traces care about every pixel,
+     the smoke would not notice half of them. The cap is set for the traces.
      ponytail: fixed steps, not a real adaptive controller. Ceiling: it only ever
      steps down, never recovers if the machine frees up. A rolling window that
      also steps back up is the upgrade if that ever shows. */
-  /* Measured with a GPU timer query, not guessed: ~2.75ms per megapixel on the
-     machine this was built on (2.07 / 3.69 / 4.95 MP all landed within 1%, so it
-     is genuinely linear in fill), which makes 5.5e6 the largest buffer that
-     still fits a 16.7ms frame. The mark grid costs a little more than the line
-     families it replaced — the skyline walk and the flow noise are more work per
-     fragment than three harmonics of one coordinate were — so this comes down
-     from 6.0e6. A 3440-wide ultrawide therefore renders at about 95% rather than
-     1:1, which is invisible next to the flow texture that paid for it.
-     Re-measure whenever the skyline walk or the flow noise changes; the octave
-     count in flowAngle is the single biggest term. Still only binds at the top
-     end: a 1x desktop never reaches it and a phone at 3x keeps the full 2x cap. */
-  const MAX_PIXELS = 5.5e6;
+  /* Measured with a GPU timer query, not guessed: 3.795ms per megapixel on the
+     machine this was built on (2.01 / 3.69 / 5.01 MP all landed within 0.1%, so
+     it is genuinely linear in fill), which makes 4.4e6 the largest buffer that
+     still fits a 16.7ms frame. That is DOWN from the ASCII terrain's 5.5e6 and
+     it is a real cost, stated rather than buried: a 1600x900 window on a 2x
+     display renders at about 78% where the terrain managed 88%, and a 3440-wide
+     ultrawide at 85% where the terrain managed 95%. A 1x desktop and a phone
+     both still render 1:1. Advection is simply more expensive than a mark grid.
+
+     What the 4.4e6 already reflects, so nobody re-treads it:
+       - The stream function's gradient is analytic, not three finite-difference
+         taps of an fbm. That alone took 4.42 -> 3.72; it is the one optimisation
+         here that paid, and it improved the field as well as the cost.
+       - Three things that looked obvious and measured at zero or worse, all
+         re-checked with the timer: splitting the dead slope out of the routing
+         (the compiler was already eliminating it), merging the three per-run
+         loops into one, and a uniform branch around the pointer terms. GPU
+         intuition about ALU count is not worth much here; the noise is 40% of
+         the frame and almost nothing else registers.
+       - A 3-sigma early-out inside busNear made it 5% SLOWER — the branch costs
+         more than the exp it skips once it defeats the loop unrolling.
+       - Two cuts that did pay in time and were rejected on looks: three
+         advection samples instead of four (15% faster, visibly beaded, the
+         plumes read as repeated stamps) and a sin-based hash (9% faster,
+         directional streaking that turns the wisps glassy and vertical).
+
+     Re-measure whenever the advection sample count or the noise changes; those
+     are the only two terms that have ever moved this number. */
+  const MAX_PIXELS = 4.4e6;
   const dpr = window.devicePixelRatio || 1;
   const STEPS = [...new Set([2, 1.5, 1, 0.75].map((s) => Math.min(dpr, s)))];
   let step = 0;

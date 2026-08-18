@@ -422,14 +422,15 @@ section { position: relative; }
    ============================================================ */
 /* The hero's own background is the fallback for the generated backdrop: it shows
    on the first frame, and it stands alone if WebGL is unavailable or the context
-   is lost. It must track the shader's ground — the field is a two-tone terminal
-   palette now, so this is the same near-flat dark warm, not the old bronze. Get
-   this wrong and the no-WebGL path looks like a different site. */
+   is lost. It must track the shader's ground — the same near-flat dark warm,
+   with the warm lift where the bus sits and its smoke collects rather than off
+   to the right where the old terrain was brightest. Get this wrong and the
+   no-WebGL path looks like a different site. */
 .hero {
   position: relative; min-height: 100vh; display: flex; align-items: flex-end; overflow: hidden;
   background:
-    radial-gradient(120% 74% at 68% 46%, rgba(232, 184, 126, 0.10) 0%, rgba(232, 184, 126, 0) 64%),
-    linear-gradient(to top, #16120E 0%, #1A1611 22%, #241E17 62%, #302820 100%);
+    radial-gradient(112% 60% at 52% 24%, rgba(232, 184, 126, 0.13) 0%, rgba(232, 184, 126, 0) 68%),
+    linear-gradient(to top, #16120E 0%, #1A1611 26%, #241E17 64%, #302820 100%);
 }
 /* every full-bleed background image fills its positioned parent */
 .manifesto__slot, .device__slot {
@@ -443,9 +444,33 @@ section { position: relative; }
   display: block; opacity: 0; transition: opacity 620ms var(--ease);
 }
 .hero__slot.is-live { opacity: 1; }
+/* The veil used to be one flat full-width band rising from the bottom edge. Over
+   a still field that is invisible; over a moving one it is the thing that looks
+   pasted on, because it is the only part of the frame that never changes while
+   everything behind it does. So it stops being a band and becomes a wedge
+   anchored under the type column, plus a much lighter global floor. The copy is
+   protected where it actually sits, and the lower right — where the plumes
+   drift and where the statcard now carries its own dark fill — stays open. */
 .hero__veil {
   position: absolute; inset: 0; z-index: 1; pointer-events: none;
-  background: linear-gradient(to top, rgba(24,18,12,0.56) 0%, rgba(24,18,12,0.18) 42%, rgba(24,18,12,0.04) 72%, rgba(24,18,12,0.10) 100%);
+  background:
+    radial-gradient(118% 88% at 6% 104%, rgba(24,18,12,0.66) 0%, rgba(24,18,12,0.32) 40%, rgba(24,18,12,0) 74%),
+    linear-gradient(to top, rgba(24,18,12,0.30) 0%, rgba(24,18,12,0.09) 34%, rgba(24,18,12,0) 66%, rgba(24,18,12,0.08) 100%);
+}
+
+/* The statcard is the weakest type pairing on the page, and the reason is that
+   --frost-fill is a LIGHT tint: over a dark hero it sits as a pale grey panel
+   with near-white text on it. Dark-on-dark inside the hero only, so the panel
+   reads as smoked glass over the field rather than as a sticker on top of it.
+   Scoped to .statcard rather than .frost so the CTA pill is untouched. */
+.hero .statcard {
+  --frost-fill: rgba(22, 18, 13, 0.50);
+  --frost-edge: rgba(246, 242, 234, 0.20);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  /* The generic fallback swaps to a near-opaque LIGHT tint, which would undo the
+     whole point of the block above. */
+  .hero .statcard { background: rgba(22, 18, 13, 0.90); }
 }
 .hero__grid {
   position: relative; z-index: 2; width: 100%;
@@ -808,6 +833,15 @@ section { position: relative; }
   .os-bar__cell:nth-child(2) { padding-left: 0; border-left: 0; }
 }
 @media (max-width: 820px) {
+  /* The copy stops being a column and spans the width, and the statcard drops
+     below it, so a wedge anchored to the left corner protects the wrong half of
+     a much taller block. Centre it and take it further up the frame — the same
+     correction the shader makes with its `narrow` term. */
+  .hero__veil {
+    background:
+      radial-gradient(140% 74% at 50% 108%, rgba(24,18,12,0.68) 0%, rgba(24,18,12,0.38) 44%, rgba(24,18,12,0) 80%),
+      linear-gradient(to top, rgba(24,18,12,0.32) 0%, rgba(24,18,12,0.12) 44%, rgba(24,18,12,0) 76%);
+  }
   .nav { grid-template-columns: 1fr auto; }
   .nav-center { display: none; }
   .nav .btn { display: none; }
