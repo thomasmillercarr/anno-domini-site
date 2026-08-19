@@ -166,7 +166,10 @@ const vec3 SKY_HI_L  = vec3(0.3994, 0.2157, 0.2428); /* #A87F86 dusty mauve   */
 const vec3 SKY_LO_L  = vec3(0.8123, 0.6523, 0.6056); /* #E8D2CB pale rose     */
 const vec3 CORAL_L   = vec3(0.7518, 0.1303, 0.1450); /* #E0656A the body      */
 const vec3 DEEP_L    = vec3(0.3994, 0.0415, 0.0582); /* #A83C46 troughs       */
-const vec3 CREAM_L   = vec3(0.9240, 0.8046, 0.7227); /* #F6E7DC the lines     */
+/* Dimmed on request from #F6E7DC — the lines were shouting over the light
+   field. A deeper, warmer cream keeps them solid (translucency would read as
+   faded print) while pulling the wash down about a stop. */
+const vec3 CREAM_L   = vec3(0.8592, 0.7085, 0.5990); /* #EEDACA the lines     */
 const vec3 HILITE_L  = vec3(1.0000, 0.9405, 0.8832); /* #FFF8F1 crest         */
 
 const vec3 SKY_HI_D  = vec3(0.0078, 0.0029, 0.0037); /* #1C1214 */
@@ -185,9 +188,18 @@ const float HS     = 1.70;  // height field scale — roughly 3 large forms acro
 const float WS     = 1.05;  // warp field scale
 const float WARP   = 0.95;  // warp amplitude, in height-field units
 const float NAMP   = 0.52;  // height noise amplitude, against TILT below
-const float BANDS  = 54.0;  // contour bands over the full height range
-const float LW     = 0.15;  // half line width, in band units (so ~30% duty)
-const float CFLOW  = 0.55;  // bands migrated per second — the "flow" across the hero
+/* BANDS was 54 and LW 0.15 (~30% duty); both came down together on request —
+   the field read as cluttered and the cream too dominant in the light theme.
+   Fewer bands open the spacing AND shrink the saturation blowouts (aa scales
+   with BANDS, so the sub-pixel zones recede), and the narrower duty holds the
+   individual line at roughly its old on-screen weight instead of letting the
+   wider bands fatten it into ribbons. CFLOW dropped in proportion so the drift
+   does not LOOK faster across the wider spacing. Density down is the safe
+   direction for the pixel budget — denser lines need more resolution, not
+   fewer. */
+const float BANDS  = 40.0;  // contour bands over the full height range
+const float LW     = 0.12;  // half line width, in band units (so ~24% duty)
+const float CFLOW  = 0.40;  // bands migrated per second — the "flow" across the hero
 const float RELIEF = 1.30;  // how far the shading normal tilts
 const float SEA    = -0.06; // silhouette cut
 

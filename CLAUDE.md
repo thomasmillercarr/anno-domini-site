@@ -163,6 +163,15 @@ Things to know before editing it:
   cannot resolve anything and coverage tends to the mean — flat grey. The `max` against
   `smoothstep(0.20, 0.58, aa)` takes it the rest of the way to solid cream. That wash along the crests
   is the most recognisable thing about the look. Do not "fix" it by pinning the line width.
+- **Line density and tone were dialled back on request** — the field read as cluttered and the light
+  theme's cream too bright. `BANDS` 54 → **40**, `LW` 0.15 → **0.12**, `CFLOW` 0.55 → **0.40**, and
+  `CREAM_L` `#F6E7DC` → **`#EEDACA`**. The four move together and should stay that way: `LW` is in
+  band units, so widening the bands without narrowing the duty cycle fattens each line into a
+  ribbon; `CFLOW` is bands-per-second, so leaving it alone makes the drift *look* faster across
+  wider spacing; and since `aa` scales with `BANDS`, dropping the count also shrinks the saturation
+  blowouts, which is half of why the frame calmed down. Density going **down** is the safe
+  direction for both the pixel budget and the contrast figures above — denser lines want more
+  resolution, and brighter ones eat the light theme's headroom.
 - **The domain warp is divergence-free** (`v = rot90(grad psi)`), not an arbitrary noise vector. A warp
   with sinks bunches the iso-lines into knots.
 - **The shading gradient deliberately excludes the tilt.** The tilt is a constant, so folding it into
@@ -245,6 +254,10 @@ Things to know before editing it:
   draw put the three sizes 2× apart and destroyed the linearity the budget depends on.
   If a future measurement forces a cut, drop the height fbm to 3 octaves **before** dropping
   resolution: an octave costs fine grain the contour lines already carry, resolution costs the lines.
+  The `BANDS` 54 → 40 change did **not** need a re-measure: band count is a constant multiply on a
+  scalar, so the instruction stream is identical either way — it changes what the contours *look*
+  like, not what they cost. The terms that genuinely move this number are the octave counts and the
+  warp, because those are noise evaluations.
   The frame-time ladder is the backstop and only steps **down**, on frames between 24ms and 300ms. Both
   bounds matter: below 24ms you are marking healthy 60fps frames as slow, and above 300ms you are not
   measuring the GPU at all — Chrome throttles occluded windows to ~1fps without ever setting
@@ -253,23 +266,38 @@ Things to know before editing it:
   near-black could reach 14.71:1 for the h1; charcoal on coral and cream cannot, because the palette's
   mid-tones set the ceiling. Every pairing clears AA in both themes with room, but the h1 is lower than
   the field it replaced and that is inherent to the direction, not a tuning failure.
-  Measured at 1282×586, mean-against-mean, against **tight glyph rects** (see below):
+  Measured at 1282×586, mean-against-mean, against **tight glyph rects** (see below). This is the
+  **pre-tuning baseline** — it predates the statement layer and the `CREAM_L` dim, so for everything
+  except the statcard the live figures are the table further down, not this one. Kept because it is
+  the only measurement of the statcard and because it is where the method below was worked out:
 
   | | sub | h1 | h1 em | CTA | statcard | nav link |
   |---|---|---|---|---|---|---|
   | light | 6.38 | 7.78–10.80 | 6.31 | 15.08 | 12.64 | 5.68 |
   | dark | 6.73 | 9.30–15.76 | 8.69 | 16.33 | 15.25 | 6.45 |
 
-  **Re-measured after the statement layer landed** (1440×810, buffer-sampled under the glyph rects,
-  minimum over a 20-second watch so the migrating bands are caught at their worst — a stricter bar
-  than the table above, which is typical frames): light nav 7.29 / sub 7.24 / h1 8.26 / em 5.55;
-  dark nav 6.21 / h1 9.81 / em 8.30. The dark sub reads 4.25 on the *bare buffer*, but the buffer
-  probe deliberately excludes `.hero__veil`, whose dark wedge holds ≥0.12 near-black alpha at the
-  sub's corner and lifts the real rendered figure past ~5.2 — the buffer numbers are conservative by
-  construction. Two of those minimums exist only because of the theme-weighted `uNavY` guard above;
-  before it, the 20s watch caught dark nav at 2.99 and (with lines damped) light nav at 3.61. The
-  settled frame is otherwise unchanged by the statement layer; the living light is the only term
-  that moves the settled distribution and its swing never approached AA.
+  **Re-measured after the statement layer and the density/tone tuning** (1440×810, buffer-sampled
+  under the glyph rects, minimum over a 20-second watch so the migrating bands are caught at their
+  worst — a stricter bar than the table above, which is typical frames):
+
+  | | nav | sub | h1 | h1 em | CTA |
+  |---|---|---|---|---|---|
+  | light | 6.76 | 5.63 | 7.16 | 5.54 | 11.62 |
+  | dark | 6.46 | 4.68 | 8.05 | 8.30 | 14.63 |
+
+  The buffer probe deliberately excludes `.hero__veil`, whose wedge sits over the copy corner, so
+  these are conservative against what is actually rendered — the dark sub in particular gains
+  roughly a point from it. Two of these minimums exist only because of the theme-weighted `uNavY`
+  guard above; before it the same watch caught dark nav at 2.99 and (with lines damped) light nav
+  at 3.61.
+
+  Dimming `CREAM_L` cost the light theme a little of its headroom (sub 7.24 → 5.63, h1 8.26 → 7.16)
+  and gained the dark theme a little (sub 4.25 → 4.68), which is the expected direction: in the
+  light theme the cream lines are the *bright* backdrop that near-black ink reads against, so
+  darkening them narrows that gap. Everything still clears AA with margin, but this is the axis to
+  re-measure if the lines are ever dimmed further — light `sub` and `h1 em` are the first to fail.
+  The living light is the only term that moves the settled distribution and its swing never
+  approached AA.
 
   `test-contrast.mjs` does **not** cover any of this; it only checks token pairs, and it needs no
   changes here because every hero override is scoped rather than applied to the global tokens.
