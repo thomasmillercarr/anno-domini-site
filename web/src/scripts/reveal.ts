@@ -17,6 +17,7 @@
 
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { setHeroScroll } from './herofield';
 
 const motionOK =
   document.documentElement.classList.contains('motion') &&
@@ -85,8 +86,15 @@ function heroParallax(): void {
   const hero = document.querySelector<HTMLElement>('.hero');
   if (!hero) return;
   const scrollOut = { trigger: hero, start: 'top top', end: 'bottom top', scrub: true } as const;
-  // yPercent stays well inside the ±12% CSS bleed on .hero__slot.
-  gsap.to('.hero__slot', { yPercent: 6, ease: 'none', scrollTrigger: { ...scrollOut } });
+  // yPercent stays well inside the ±12% CSS bleed on .hero__slot. The same
+  // trigger feeds the field's submergence — the sea rises to swallow the
+  // landmass as the hero scrolls out — so the two can never drift apart, and
+  // herofield.ts needs no scroll listener of its own.
+  gsap.to('.hero__slot', {
+    yPercent: 6,
+    ease: 'none',
+    scrollTrigger: { ...scrollOut, onUpdate: (self) => setHeroScroll(self.progress) },
+  });
   gsap.to('.hero__grid', { y: 64, ease: 'none', scrollTrigger: { ...scrollOut } });
 }
 

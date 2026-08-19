@@ -11,62 +11,105 @@
  *
  * ---- what this draws ----
  *
- * Digital smoke drifting through wiring. A bus of hard routed traces crosses the
- * upper half of the frame; smoke sheds off them and rises, railing along a trace
- * where it runs close to one and tearing loose where the trace kinks.
+ * A contoured relief landscape. A folded, eroded landmass carved by dense cream
+ * iso-lines, over a soft dusty ground: coral bodies, deep red in the troughs,
+ * cream washes blowing out along the lit crests. The grain reads as wood or a
+ * fingerprint, and it flows — the contour bands migrate across the surface while
+ * the folds themselves slowly reshape.
  *
- *   1. A BUS of five routed runs, each a mostly-horizontal staircase with two 45
- *      degree steps. Charge travels each run leftward on its own phase, and each
- *      run terminates at its own x — the lower ones soonest, so the cascade opens
- *      out and leaves the headline's corner clear.
- *   2. A DIVERGENCE-FREE VELOCITY FIELD from a stream function: v = rot90(grad
- *      psi). Divergence-free is not decoration — a field with sinks piles smoke
- *      into blobs, and blobs are what makes procedural smoke look like fog.
- *   3. SMOKE BY BACKWARD ADVECTION. From each fragment, walk backwards along that
- *      velocity and ask what was there. The density source is the bus itself, so
- *      the smoke is not an independent layer that happens to sit near the wiring:
- *      it is the wiring, transported. A fragment high above the bus backtracks
- *      down into it and picks up density, which is where the plumes come from.
- *   4. The velocity is BENT TOWARD A RUN near one, so flow rails along a trace.
- *      At a 45 degree kink the alignment turns faster than the advection path
- *      does, and the smoke tears off — the shed at the junctions is not authored,
- *      it falls out of the coupling.
- *   5. The pointer injects a vortex and a push into the same field, and energises
- *      the charge on whichever run it is near, downstream only.
+ *   1. A HEIGHT FIELD h(p): a four-octave value-noise fbm on a DOMAIN-WARPED
+ *      coordinate. The warp is what makes the grain swirl and eddy. Without it
+ *      an fbm gives rounded blobs and the contours draw concentric rings, which
+ *      is a topographic map, not this.
+ *   2. CONTOURS as the dominant texture — fract(h * BANDS), anti-aliased against
+ *      fwidth so they stay clean at any resolution, and deliberately allowed to
+ *      SATURATE to solid cream where the bands fall below Nyquist.
+ *   3. SHADING from the field's own analytic gradient: Lambert against a light
+ *      up and to the left, plus a tight specular for the near-white ridge line.
+ *   4. A SILHOUETTE cut at a sea level, so the mass has hard eroded edges against
+ *      the ground rather than fading out, with a darker band just inside the cut
+ *      so it reads as a cliff face rather than a paper cutout.
+ *   5. The pointer pushes a bulge into the height field — the contours ripple
+ *      outward from it — and drags the warp along its recent travel.
  *
- * ---- why the advection is shaped this way ----
+ * On top of the field, four choreographed moves — all of them uniforms and a
+ * little ALU, ZERO new noise evaluations, so the measured pixel budget below
+ * still holds:
  *
- * Real iterated advection is impossible here and there is no point pretending
- * otherwise: it needs state carried between frames, so a feedback texture, a
- * second target and a second program. The one-pass substitute is to walk
- * backwards through an ANALYTIC field per fragment.
+ *   - FORMATION: the first ~2.9s after the ticker starts drain the sea to
+ *     surface the landmass and etch the contour lines in, behind the CSS type
+ *     entrance. At uForm = 0 the frame is the bare sky gradient, which is what
+ *     the .hero CSS fallback paints, so the is-live opacity fade is seamless.
+ *   - SUBMERGENCE: reveal.ts feeds the hero's scroll-out progress into
+ *     setHeroScroll(); the sea rises with it and swallows the landmass as the
+ *     visitor leaves, then gives it back on the way up. Same clock, same
+ *     ScrollTrigger — no scroll listener here.
+ *   - RIPPLES: a click (or a real tap on touch — pointerup within 350ms/12px,
+ *     so scroll flicks never fire it) drops a travelling gaussian ring into the
+ *     HEIGHT, with its analytic gradient added to the shading normal. The
+ *     surface deforms and the contours wave outward; it is not a colour overlay.
+ *     Three pooled slots, oldest recycled, the whole block gated on one uniform.
+ *   - THEME SWEEP: the theme change is a radial front expanding from the toggle
+ *     button — night crosses the landscape — instead of the old whole-frame
+ *     temporal lerp. Idle frames have uDarkTo == uDark, so the mix collapses.
+ *   - LIVING LIGHT: the light direction orbits ±4 degrees over ~26s, so the
+ *     crest highlights crawl along the ridge lines even with no input. At
+ *     time = 0 it equals the old constants exactly, which keeps the
+ *     reduced-motion frame identical.
  *
- * The naive form of that re-evaluates the velocity at every step, which is three
- * taps of an fbm per step and puts this shader at roughly twice the cost of the
- * terrain it replaces — straight into the resolution ladder, which is the blur
- * this whole file exists to avoid. So the velocity is evaluated ONCE and then
- * rotated and shrunk analytically along the path: a logarithmic spiral arc. The
- * streaks curve, which is the part that reads as advected, and the field costs
- * one evaluation. Do not "improve" this by sampling the flow per step without
- * re-measuring; it is the single largest term in the frame.
+ * ---- why the contours saturate, and why that is correct ----
+ *
+ * The line is drawn with `smoothstep(0, fwidth(c), ...)`, so its edge softness
+ * tracks how fast the bands are moving across the screen. Where a slope is steep
+ * enough that a band spans less than a pixel, that smoothstep can no longer
+ * resolve anything and the coverage tends to the mean — a flat grey. The `max`
+ * against `smoothstep(0.30, 0.78, aa)` takes it the rest of the way to solid
+ * cream instead. That wash along the crests is the single most recognisable
+ * thing about the look; it is the intended behaviour of an unresolvable band,
+ * not an artefact to clamp away. Do not "fix" it by pinning the line width.
+ *
+ * ---- what this costs, and what was not built ----
+ *
+ * The reference is viewed at an angle, so its ridges lean and near-overlap.
+ * Faking that needs two or three fixed-point iterations of q = p + vec2(0, h(q)*k),
+ * which is two or three more full field evaluations — roughly a third of the
+ * pixel budget. Hard contour lines are the most resolution-sensitive thing this
+ * shader could possibly draw, so buying lean with blur is the wrong trade; it is
+ * the same reasoning that replaced the hero WebP in the first place. The relief
+ * is shaded flat and lit instead.
+ *
+ * The field is 6 noise evaluations a fragment: 2 for the warp, 4 for the height.
+ * Both use vnoiseD, which returns the value AND its exact closed-form gradient —
+ * three taps of an fbm for an approximate derivative costs 3x that for a worse
+ * answer. This is the one optimisation that has ever paid on this file; keep it.
  *
  * ---- one pass ----
  *
- * Bloom was the only reason this ever had five passes, two HDR ping-pong targets
- * and a float-extension branch. Without it, everything is a single fullscreen
- * quad, and the tonemap and grain happen inline at the end. Accumulation is still
- * in linear light: doing it in gamma space is what makes bright areas go chalky
- * grey instead of hot, and that is a physical error, not a taste.
+ * One fullscreen quad, one program. Accumulation is in linear light — doing it
+ * in gamma space is what makes bright areas go chalky grey instead of hot, and
+ * that is a physical error, not a taste. The palette constants are ALREADY
+ * raised to 2.2; never paste sRGB values into them.
  *
  * ---- behaviour ----
  *
  *   - Runs off gsap.ticker, which scroll.ts already drives in lockstep with
  *     Lenis. One clock for the page — a second rAF loop is what makes canvas
  *     work feel detached from smooth scroll.
+ *   - Two palettes, selected per-fragment by the theme front (see THEME SWEEP
+ *     above). The coupling is one-directional: this file watches data-theme
+ *     with a MutationObserver, theme.ts knows nothing about it. A toggle while
+ *     the ticker is stopped (hero off-screen, tab hidden) snaps instead of
+ *     sweeping, so the field is never caught mid-front when it scrolls back in.
  *   - The pointer bends the field and drags a short wake behind it. All input is
- *     lerped, never applied raw.
- *   - Reduced motion renders exactly one frame and never registers a ticker.
- *   - No WebGL2, or a lost context, falls back to the CSS gradient on .hero.
+ *     lerped, never applied raw. Pointer positions are normalised against the
+ *     CANVAS box, not the hero's — the canvas is the shader's coordinate frame
+ *     (it bleeds 124% for the parallax), and its rect includes the parallax
+ *     transform, which is the visual truth the cursor lines up against.
+ *   - Reduced motion renders exactly one frame — complete, uForm = 1 — and
+ *     never registers a ticker.
+ *   - No WebGL2 falls back to the CSS gradient on .hero. A LOST context tears
+ *     everything down to that same gradient, and a restored one re-runs init()
+ *     so a driver reset costs the visitor nothing.
  *
  * The canvas never writes its own transform: reveal.ts scrubs yPercent on
  * .hero__slot for the scroll parallax and the two would fight.
@@ -91,6 +134,18 @@ uniform vec2  uPointer;     // field coords, already smoothed on the JS side
 uniform float uPointerAmt;  // 0 -> 1 as the cursor enters / leaves the hero
 uniform vec2  uPointerVel;  // recent cursor velocity, for the wake
 uniform float uWake;        // decaying wake strength
+uniform float uDark;        // settled ("from") theme value, 0 light / 1 dark
+uniform float uDarkTo;      // incoming theme value; equals uDark when idle
+uniform vec3  uSweep;       // theme front: centre.xy in field coords, radius
+uniform float uForm;        // formation 0 -> 1, eased on the JS side
+uniform float uSink;        // scroll-out submergence 0 -> 1, eased on the JS side
+uniform float uRipOn;       // any ripple live — uniform gate for the whole block
+uniform vec4  uRip[3];      // ripples: centre.xy, age in s, amplitude
+uniform vec3  uLdir;        // light direction (unit), orbited on the JS side
+uniform vec3  uLhalf;       // matching half vector, orbited in lockstep
+uniform float uContentHW;   // half-width of .hero__grid, in field units
+uniform vec2  uQuietTop;    // uvy of the top of (copy column, statcard)
+uniform float uNavY;        // uvy of the nav's BOTTOM edge, measured from layout
 
 out vec4 fragColor;
 
@@ -98,36 +153,64 @@ out vec4 fragColor;
    these are those raised to 2.2. Every mix below happens in linear light, so
    never paste sRGB values in here.
 
-   PHOSPHOR is the trace colour: an amber between --timber and --accent-warm,
-   deliberately NOT the near-white of --on-img so the wiring never competes with
-   the headline over it. SMOKE is dimmer again and more desaturated, and its
-   ceiling is the number that decides the type contrast — the headline sits on
-   whatever the smoke leaves behind. */
-const vec3 GROUND_L = vec3(0.0094, 0.0066, 0.0040); /* #1A1611 */
-const vec3 LIFT_L   = vec3(0.0330, 0.0250, 0.0165); /* #302820, top of frame  */
-const vec3 PHOS_L   = vec3(0.8126, 0.4884, 0.2120); /* #E8B87E, the trace tone */
-const vec3 SMOKE_L  = vec3(0.0420, 0.0320, 0.0212); /* dim desaturated warm    */
+   Two sets. The light one is the reference artwork: dusty mauve ground, coral
+   body, cream lines. The dark one is the same landscape at night — the site has
+   a theme toggle and a high-key coral field under it would be the one thing on
+   the page that ignores it.
 
-/* ---- the bus ----
-   Five runs. RY is where a run starts at the left, RK packs its two 45 degree
-   steps as (x1, dy1, x2, dy2) with x as a fraction of the half-width, so the
-   routing rescales with the frame instead of walking off the side of a phone.
-   Every step is positive, so a run climbs to the right — read right to left, the
-   way the charge travels, they descend.
+   GROUND_LO is the bottom of the frame, and it is the single most load-bearing
+   colour here: the headline, the sub-label, the CTA and the statcard all sit on
+   it. The composition below keeps the mass off it deliberately, and the type
+   contrast is measured against whatever it leaves behind. */
+const vec3 SKY_HI_L  = vec3(0.3994, 0.2157, 0.2428); /* #A87F86 dusty mauve   */
+const vec3 SKY_LO_L  = vec3(0.8123, 0.6523, 0.6056); /* #E8D2CB pale rose     */
+const vec3 CORAL_L   = vec3(0.7518, 0.1303, 0.1450); /* #E0656A the body      */
+const vec3 DEEP_L    = vec3(0.3994, 0.0415, 0.0582); /* #A83C46 troughs       */
+const vec3 CREAM_L   = vec3(0.9240, 0.8046, 0.7227); /* #F6E7DC the lines     */
+const vec3 HILITE_L  = vec3(1.0000, 0.9405, 0.8832); /* #FFF8F1 crest         */
 
-   The band sits in the upper half on purpose. The headline is a column in the
-   lower left and the statcard is a panel in the lower right; putting the sources
-   above both of them means the bottom of the frame is quiet by construction
-   rather than by clawing density back with the contrast guard. */
-const int RUNS = 5;
-const float RY[5] = float[5](0.055, 0.130, 0.205, 0.285, 0.360);
-const vec4  RK[5] = vec4[5](
-  vec4(-0.34, 0.055,  0.46, 0.040),
-  vec4( 0.12, 0.048, -0.62, 0.032),
-  vec4(-0.06, 0.052,  0.68, 0.045),
-  vec4( 0.52, 0.040, -0.28, 0.050),
-  vec4( 0.30, 0.046, -0.70, 0.038)
-);
+const vec3 SKY_HI_D  = vec3(0.0078, 0.0029, 0.0037); /* #1C1214 */
+const vec3 SKY_LO_D  = vec3(0.0231, 0.0084, 0.0104); /* #2E1D20 */
+const vec3 CORAL_D   = vec3(0.1975, 0.0231, 0.0328); /* #7A2E36 */
+const vec3 DEEP_D    = vec3(0.0385, 0.0041, 0.0060); /* #3A1519 */
+/* Measurably darker than the obvious rose-gold. The dark theme puts NEAR-WHITE
+   type over this, and a line tone bright enough to look like polished copper
+   took the nav links to 4.50:1 — a fail on the round. These are the same hues,
+   two stops down, and the pairing is 6.4:1. */
+const vec3 CREAM_D   = vec3(0.5924, 0.2428, 0.1604); /* #C9866F */
+const vec3 HILITE_D  = vec3(0.8199, 0.4314, 0.2844); /* #E9AE90 */
+
+/* ---- field constants ---- */
+const float HS     = 1.70;  // height field scale — roughly 3 large forms across 16:9
+const float WS     = 1.05;  // warp field scale
+const float WARP   = 0.95;  // warp amplitude, in height-field units
+const float NAMP   = 0.52;  // height noise amplitude, against TILT below
+const float BANDS  = 54.0;  // contour bands over the full height range
+const float LW     = 0.15;  // half line width, in band units (so ~30% duty)
+const float CFLOW  = 0.55;  // bands migrated per second — the "flow" across the hero
+const float RELIEF = 1.30;  // how far the shading normal tilts
+const float SEA    = -0.06; // silhouette cut
+
+/* THE RATIO OF TILT TO NAMP IS THE WHOLE LOOK. Read this before touching either.
+ *
+ * An fbm has no preferred direction, so its iso-lines close into rings around
+ * every local extremum. Contour a plain fbm and the frame fills with concentric
+ * whorls and little eyes — marbled paper, or a survey map. A plane has perfectly
+ * parallel iso-lines and no character at all.
+ *
+ * The reference is neither: it is a PLANE, warped. Long lines running roughly
+ * parallel for the width of the frame, folded into sweeping curves, closing into
+ * a lens shape only occasionally. That comes from letting the tilt dominate the
+ * height (roughly 3:1 here) and putting the character in the domain warp
+ * instead, which bends the parallel bands without creating new extrema for them
+ * to close around. Push NAMP up toward TILT and the rings come straight back;
+ * this was tried at parity and it is unmistakably the wrong picture.
+ *
+ * The tilt doubles as composition: its gradient points up and to the right, so
+ * the landmass sits high there and the ground opens toward the lower left, which
+ * is where the headline column is. */
+const float TILT = 0.95;
+const vec2  TDIR = vec2(0.42, 0.91);
 
 float hash21(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -141,47 +224,16 @@ float hash12(vec2 p) {
   return fract((p3.x + p3.y) * p3.z);
 }
 
-/* Value noise with a quintic fade — C2, so its gradient is C1.
+/* Value noise AND its exact gradient, as (value, d/dx, d/dy), with a quintic
+ * fade so the field is C2 and the gradient C1 — which matters twice here, once
+ * because the gradient IS the shading normal and once because a discontinuous
+ * gradient puts a visible crease along every lattice edge in the contours.
  *
- * Every previous version of this file used a piecewise-LINEAR triangular
- * lattice, deliberately unsmoothed, because a planar field has straight
- * iso-lines and straight iso-lines are what made the terrain and the weave look
- * faceted rather than rounded. That virtue does not survive the change of
- * subject, and the reason is worth writing down because it looks like a
- * regression otherwise:
- *
- *   - A piecewise-linear field has a piecewise-CONSTANT gradient. Used as a
- *     stream function it gives every fragment inside a lattice triangle the
- *     identical velocity, so they all backtrack along the same vector and stamp
- *     the source in the same place. The frame fills with flat-shaded polygons
- *     with hard straight edges. This was tried; it is unmistakable.
- *   - Rendered as a level set rather than as iso-lines, a planar field IS a flat
- *     polygon. The faceting was never visible as facets before because nothing
- *     ever drew its levels.
- *
- * So the lattice noise is gone, and the crease it used to provide comes from the
- * ridged transform below instead, which puts sharp creases on the zero set of a
- * smooth field rather than on the edges of a lattice.
- */
-float vnoise(vec2 p) {
-  vec2 i = floor(p), f = p - i;
-  vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
-  float a = hash21(i);
-  float b = hash21(i + vec2(1.0, 0.0));
-  float c = hash21(i + vec2(0.0, 1.0));
-  float d = hash21(i + vec2(1.0, 1.0));
-  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-}
-
-/* Value AND its exact gradient, as (value, d/dx, d/dy).
- *
- * The stream function needs a gradient, and the obvious way to get one is three
- * taps of the fbm and two subtractions. That is 3x the noise for a derivative
- * that is only approximate. Value noise on a lattice is a bilinear form in the
- * faded coordinates, so its derivative is closed-form: the same four corner
- * hashes, plus the derivative of the quintic, for about a third more work than
- * the value alone. Measured, the flow term was 6 noise evaluations a fragment
- * and is now 2 — and the gradient is exact rather than epsilon-limited. */
+ * The obvious way to get a gradient is three taps and two subtractions: 3x the
+ * noise for a derivative that is only approximate. Value noise on a lattice is a
+ * bilinear form in the faded coordinates, so its derivative is closed-form — the
+ * same four corner hashes plus the derivative of the quintic, for about a third
+ * more work than the value alone. */
 vec3 vnoiseD(vec2 p) {
   vec2 i = floor(p), f = p - i;
   vec2 u  = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
@@ -199,133 +251,73 @@ vec3 vnoiseD(vec2 p) {
 /* Every octave is ROTATED as well as scaled. Value noise sits on a square
    lattice and its features line up with the axes; stack octaves on the same
    axes and the alignment reinforces instead of averaging out, which draws tall
-   axis-aligned rectangles across the frame. The ridged transform below makes
-   that far worse, because it turns the lattice's gentle bias into a crease.
-   One rotation per octave decorrelates them and it is free. */
+   axis-aligned rectangles across the frame. Contours make that unmissable —
+   they trace the iso-lines, so any axis bias in the field becomes a bias in
+   every single line. One rotation per octave decorrelates them and it is free. */
 const mat2 ROT = mat2(0.80, 0.60, -0.60, 0.80);
 
-/* Ridged fbm. 1 - |2n| peaks on the zero set of the noise, which is a curve, so
-   squaring it leaves thin sharp filaments rather than blobs — the crease the
-   faceted lattice used to give, on a field smooth enough to differentiate. */
-float fbmR(vec2 p, int oct) {
+/* The height field: value + its exact gradient, chain-ruled through the octave
+ * transforms. The matrix m carries the accumulated domain transform, so octave
+ * i's contribution to d/dp is (dn/dp_i) * M_i. (No backticks in here — the whole
+ * shader is a JS template literal and one would end it.)
+ *
+ * gSoft is the same gradient truncated to the first two octaves, and it is what
+ * the SHADING uses. The full gradient is dominated by the finest octave, and
+ * lighting a surface with that gives a sandblasted look with no readable form —
+ * the fine detail is already carried by the contour lines, which is where it
+ * belongs. Splitting it out inside the same loop costs no extra noise. */
+vec3 fbmD(vec2 p, out vec2 gSoft) {
   float a = 0.5, s = 0.0;
-  for (int i = 0; i < oct; i++) {
-    float n = 1.0 - abs(vnoise(p) * 2.0);
-    s += a * n * n;
-    p = ROT * p * 2.11; a *= 0.5;
+  vec2 g = vec2(0.0);
+  gSoft = vec2(0.0);
+  mat2 m = mat2(1.0);
+  for (int i = 0; i < 4; i++) {
+    vec3 n = vnoiseD(p);
+    vec2 gi = a * (n.yz * m);
+    s += a * n.x;
+    g += gi;
+    if (i < 2) gSoft += gi;   // loop-constant, unrolls away
+    m = 2.07 * ROT * m;
+    p = 2.07 * ROT * p;
+    /* Gain above the usual 0.5 on purpose. At 0.5 the slope is nearly uniform
+       across the frame, so the contours come out evenly spaced everywhere and
+       the result reads as a survey map — legible, inert. The extra weight on the
+       fine octaves is what makes some stretches pack tight and blow out to cream
+       while others open into broad coral, which is the variation the reference
+       lives on. It is also what erodes the silhouette into fingers. */
+    a *= 0.53;
   }
-  return s;
+  return vec3(s, g);
 }
 
-/* The centreline of one run at x, plus its slope.
- *
- * Two clamped ramps, each of width |dy| so the connector is exactly 45 degrees
- * on screen — the field coordinates are isotropic, both axes divided by the
- * canvas height, so equal run and rise really is 45 and not merely close.
- *
- * The slope comes back because the perpendicular distance to a line of gradient
- * m is the vertical distance over sqrt(1 + m*m). Skip that and the diagonal
- * connectors draw sqrt(2) times too thick, which is exactly the join that is
- * meant to look machined. */
-/* The centreline alone. busNear calls this twenty times a fragment and never
-   looks at the slope, and the slope is four smoothsteps — worth about a fifth of
-   the frame on its own if the compiler does not manage to eliminate it, which is
-   not a thing to leave to the compiler at this call count. */
-float runMid(float x, int i, float hw) {
-  vec4 k = RK[i];
-  k.yw *= clamp(hw / 0.889, 0.55, 1.0);
-  return RY[i]
-       + k.y * clamp((x - k.x * hw) / abs(k.y), 0.0, 1.0)
-       + k.w * clamp((x - k.z * hw) / abs(k.w), 0.0, 1.0);
-}
+/* The domain warp: a divergence-free vector from a stream function,
+   v = rot90(grad psi). Two octaves, exact gradients, one evaluation.
 
-float runY(float x, int i, float hw, out float slope) {
-  vec4 k = RK[i];
-  /* The step HEIGHTS rescale with the frame too, not just the kink positions.
-     Leave them absolute and a portrait frame routes the same climb over a third
-     of the horizontal distance, so the bus stops reading as a bus and starts
-     reading as a zigzag — the connectors dominate and the flat runs between them
-     nearly vanish. Authored against a 16:9 half-width, floored so the steps do
-     not disappear entirely. */
-  k.yw *= clamp(hw / 0.889, 0.55, 1.0);
-  float w1 = abs(k.y), w2 = abs(k.w);
-  float x1 = k.x * hw, x2 = k.z * hw;
-  float t1 = clamp((x - x1) / w1, 0.0, 1.0);
-  float t2 = clamp((x - x2) / w2, 0.0, 1.0);
-  /* The slope has to ramp on and off SMOOTHLY, over most of the ramp, not
-     switch at its ends. It feeds 1/sqrt(1+m*m), so a switch moves the distance
-     metric by 30% within a fragment or two — and anything derived from it is
-     evaluated all along an advection path, so a step there draws a hard vertical
-     seam down the entire height of the frame at every kink. Five runs, four ramp
-     ends each, and the frame is barred like a cage. Ramping over a third of the
-     ramp on each side rounds the join at a scale below the trace width and the
-     seams go. */
-  slope = sign(k.y) * (smoothstep(0.0, 0.35, t1) - smoothstep(0.65, 1.0, t1))
-        + sign(k.w) * (smoothstep(0.0, 0.35, t2) - smoothstep(0.65, 1.0, t2));
-  return RY[i] + k.y * t1 + k.w * t2;
-}
-
-/* How close q is to the bus, as a smoke source.
- *
- * This is the density field the advection samples, and it is the whole reason
- * the smoke and the wiring read as one thing: there is no independent smoke
- * field. What drifts through the frame is this, transported.
- *
- * The sheath is TIGHT — about a thirtieth of the frame height. A wide one needs
- * no transport to be visible, so it just sits there as a band around the wires
- * and the whole exercise collapses into a fog card. Tight means the only way
- * smoke reaches the top of the frame is by being carried there. */
-float busNear(vec2 q, float hw, float lift, float k, float t) {
-  float m = 0.0;
-  for (int i = 0; i < RUNS; i++) {
-    /* A run does not smoke evenly along its length. An even source is a curtain
-       — it was one, and it draped over the whole upper half and buried the
-       wiring behind it. It smokes WHERE THE CHARGE IS, on the same phase the
-       trace draws its pulse from, one term behind so the plume trails the pulse
-       rather than sitting on it. Nothing new is evaluated for this: it is the
-       charge, read a second time. */
-    float emit = 0.22 + 0.95 * smoothstep(0.30, 1.0,
-      sin((hw - q.x) * 5.6 - t * 0.85 + float(i) * 2.3 - 0.9) * 0.5 + 0.5);
-    /* Vertical distance, NOT perpendicular distance. Correcting for the slope
-       would make the sheath sqrt(2) times narrower over the 45 degree segments,
-       which is invisible on something this soft — and it would drag the slope
-       term, and every discontinuity in it, into a quantity that is evaluated at
-       four points along an advection path. The trace itself is drawn with the
-       correction because there a 40% width error is the whole difference between
-       a machined join and a fat one. */
-    float d = q.y - (runMid(q.x, i, hw) + lift);
-    m = max(m, exp(-d * d * k) * emit);
-  }
-  return m;
-}
-
-/* Divergence-free velocity from a stream function. v = (dpsi/dy, -dpsi/dx) has
-   zero divergence identically, so the flow has no sinks for smoke to pile into —
-   which is the difference between drifting sheets and a field of soft blobs.
-   Two octaves, exact gradients, evaluated ONCE per fragment. */
-const float FS = 1.62;
-vec2 flow(vec2 q, float t) {
-  vec2  w = q * FS + vec2(t * 0.021, -t * 0.013);
-  vec2  g = vec2(0.0);
-  mat2  m = mat2(1.0);   // accumulated domain transform, for the chain rule
-  vec2  pp = w;
+   This is what turns the fbm's rounded blobs into folded, eddying grain. Drop it
+   and the contours draw concentric rings around every local maximum, which is a
+   contour MAP — legible, and completely unlike the reference. Divergence-free is
+   not decoration either: a warp with sinks bunches the iso-lines into knots. */
+vec2 curl(vec2 w) {
+  vec2 g = vec2(0.0);
+  mat2 m = mat2(1.0);
   float a = 0.5;
   for (int i = 0; i < 2; i++) {
-    vec3 n = vnoiseD(pp);
-    // Each octave is read at m*w, so its contribution to d/dw is (dn/dpp) * m.
+    vec3 n = vnoiseD(w);
     g += a * (n.yz * m);
-    m  = 2.07 * ROT * m;
-    pp = 2.07 * ROT * pp;
+    m = 2.07 * ROT * m;
+    w = 2.07 * ROT * w;
     a *= 0.5;
   }
-  g *= FS;               // and w = q * FS
   return vec2(g.y, -g.x);
 }
 
 /* Highlight-only shoulder. Identity below K, then a smooth C1 roll to 1.0.
    Deliberately NOT ACES: ACES desaturates and pulls midtones down, and the
-   midtones here are what the type contrast is measured against. */
-const float K = 0.55;
+   midtones here are what the type contrast is measured against. K sits high
+   because this palette is high-key — a shoulder starting at 0.55 would compress
+   the cream lines, which are the brightest thing in the frame and the whole
+   subject. */
+const float K = 0.80;
 vec3 tone(vec3 x) {
   vec3 s = vec3(K) + (1.0 - K) * (1.0 - exp(-(x - K) / (1.0 - K)));
   return mix(x, s, step(vec3(K), x));
@@ -336,204 +328,240 @@ void main() {
   float t   = uTime;
   vec2  p   = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
   float uvy = gl_FragCoord.y / uRes.y;
+  float nx  = p.x / hw;
 
   /* A portrait frame is a different composition, not a cropped one: the copy
      stops being a column and spans the width, and the statcard drops below it
-     rather than sitting beside it, so both take far more of the height. The bus
-     lifts out of the way rather than the guard fighting it afterwards. */
+     rather than sitting beside it, so both take far more of the height. */
   float narrow = 1.0 - smoothstep(0.55, 0.80, hw);
-  float lift   = 0.10 * narrow;
 
-  /* ---- pointer, as a disturbance in the flow ----
-     A vortex plus a push along the recent travel. Both are added to the velocity
-     rather than to the density, so the cursor moves smoke that is already there
-     instead of painting new smoke — which is the difference between parting it
-     and drawing on it. */
-  /* Gated on the uniform, not on anything per-fragment. uPointerAmt is the same
+  /* ---- pointer, as a disturbance in the field ----
+     Gated on the uniform, not on anything per-fragment. uPointerAmt is the same
      for every fragment in the draw, so this is uniform control flow and the
      whole block is skipped for free — which is the common case on a desktop and
-     the only case on a phone, where there is no fine pointer at all. It takes
-     four exp calls and a normalize out of every fragment when nothing is
-     hovering. */
+     the only case on a phone, where there is no fine pointer at all.
+
+     The bulge carries its own analytic gradient. Adding to h without adding to
+     the gradient would light the swelling as if it were flat, and the contours
+     would ripple over a surface that never tilted. */
   bool  hover = uPointerAmt > 0.002;
-  vec2  swirl = vec2(0.0);
-  vec2  push  = vec2(0.0);
+  vec2  wpush = vec2(0.0);
+  float bump  = 0.0;
+  vec2  bumpG = vec2(0.0);
   if (hover) {
-    vec2  pd  = p - uPointer;
-    float pr2 = dot(pd, pd);
-    swirl = vec2(-pd.y, pd.x) * exp(-pr2 * 11.0) * uPointerAmt * 2.6;
-    push  = uPointerVel * exp(-pr2 * 14.0) * uWake * 0.55;
+    vec2  pd = p - uPointer;
+    float r2 = dot(pd, pd);
+    bump  = uPointerAmt * 0.085 * exp(-r2 * 24.0);
+    bumpG = -48.0 * pd * bump;
+    wpush = uPointerVel * exp(-r2 * 16.0) * uWake * 0.09;
   }
 
-  /* ---- velocity at this fragment ---- */
-  /* The turbulent term has to be COMPARABLE to the drift, not a perturbation on
-     it. Scaled down to a tenth it averages out over the length of an advection
-     path and every fragment ends up backtracking along nearly the same vector,
-     which draws the source once, softly, everywhere — a wash. At parity the
-     paths diverge and the plumes acquire shape. */
-  vec2 v = flow(p, t) * 0.52 + vec2(-0.24, 0.33) + swirl + push;
-
-  /* ---- one walk over the runs ----
-     The flow alignment, the drawn trace and the sheath the smoke starts from all
-     want the same five centrelines at the same x. Computed in three separate
-     loops that is fifteen evaluations of the routing per fragment for five
-     distinct answers, and the routing is the second largest term in the frame
-     after the noise. One loop, kept.
-
-     Bending the flow toward a nearby run is the coupling. The alignment falls
-     off over about a tenth of the frame height, so a fragment near a trace
-     inherits that trace's direction and one between two traces is back on the
-     open field. */
-  float aW = 0.0;
-  vec2  aD = vec2(0.0);
-  float trace = 0.0;
-  float wTrace = max(0.9, 0.0016 * uRes.y);
-
-  for (int i = 0; i < RUNS; i++) {
-    float sl;
-    float ry = runY(p.x, i, hw, sl) + lift;
-    float inv = inversesqrt(1.0 + sl * sl);
-    float da  = (p.y - ry) * inv;
-
-    float w = exp(-da * da * 90.0);
-    // Charge runs leftward, so the tangent points that way too.
-    aD += normalize(vec2(-1.0, -sl)) * w;
-    aW += w;
-
-    /* Junction pads. The kink is where the routing does something, so it is
-       where a real board puts copper — and it doubles as the visual cue for the
-       point the smoke tears off. */
-    vec4 k = RK[i];
-    float a1 = (p.x - k.x * hw) * 26.0;
-    float a2 = (p.x - k.z * hw) * 26.0;
-    float pad = exp(-a1 * a1) + exp(-a2 * a2);
-    float ww = wTrace * (1.0 + 1.5 * pad);
-    float m  = 1.0 - smoothstep(ww - 0.6, ww + 0.6, abs(da) * uRes.y);
-
-    /* Each run ends at its own x. The lower runs stop soonest, so the bus opens
-       out toward the left and the headline's corner is the emptiest part of the
-       frame. */
-    float endx = (-0.90 + 0.16 * float(4 - i)) * hw;
-    m *= smoothstep(endx, endx + 0.22, p.x);
-
-    /* Charge, travelling left, each run on its own phase. */
-    float ph = (hw - p.x) * 5.6 - t * 0.85 + float(i) * 2.3;
-    float pulse = smoothstep(0.55, 1.0, sin(ph) * 0.5 + 0.5);
-
-    float ener = 0.0;
-    if (hover) {
-      /* The pointer energises the run it is nearest, and only downstream of
-         itself — the tail is six times longer to the left than to the right, so
-         the brightening reads as charge running away from the cursor rather than
-         as a lamp switched on under it. */
-      float du = p.x - uPointer.x;
-      float dyp = uPointer.y - ry;
-      ener = uPointerAmt * exp(-dyp * dyp * 70.0)
-           * exp(-du * du * (du > 0.0 ? 55.0 : 9.0));
+  /* ---- pressure ripples ----
+     A tap drops a stone into the field: a travelling gaussian ring added to
+     the HEIGHT, its analytic gradient added to the shading normal, so the
+     contours and the lighting genuinely wave outward — a deformation, not a
+     colour overlay. Gated the same way as the bulge: uRipOn and each slot's
+     amplitude are per-draw uniforms, so an idle frame skips all of this as
+     uniform control flow. */
+  float rip  = 0.0;
+  vec2  ripG = vec2(0.0);
+  if (uRipOn > 0.5) {
+    for (int i = 0; i < 3; i++) {
+      vec4 R = uRip[i];
+      if (R.w > 0.0005) {
+        vec2  rd = p - R.xy;
+        float d  = max(length(rd), 1e-4);
+        float g  = d - (0.10 + R.z * 0.50);   // the front expands at 0.5 units/s
+        float aR = R.w * exp(-R.z * 1.15);    // and the wave decays as it goes
+        float e  = aR * exp(-70.0 * g * g);
+        rip  += e;
+        ripG += (-140.0 * g * e) * (rd / d);
+      }
     }
-
-    trace += m * (0.26 + 0.85 * pulse * pulse + 1.10 * ener);
   }
-  trace = min(trace, 2.2);
 
-  aW = clamp(aW, 0.0, 1.0);
-  if (aW > 0.002) v = mix(v, normalize(aD) * (0.62 + 0.5 * aW), aW * 0.72);
+  /* ---- the field ----
+     Both domains drift, and on different vectors: the warp drifting reshapes the
+     folds, the height drifting slides the whole landform. Together that is the
+     morph. Neither costs an evaluation. */
+  vec2 wq = p * WS + vec2(t * 0.011, -t * 0.008);
+  vec2 q  = p * HS + WARP * curl(wq) + wpush + vec2(-t * 0.016, t * 0.009);
 
-  /* ---- backward advection ----
-     Walk back along the velocity, turning it a little and shrinking it each step
-     so the path is an arc rather than a straight smear, and ACCUMULATE the
-     source along the way.
+  vec2 gSoft;
+  vec3 H  = fbmD(q, gSoft);
+  float h = NAMP * H.x + bump + rip + TILT * dot(p, TDIR);
 
-     The accumulation is the part that matters. Sampling the source at one
-     backtracked point gives a displaced copy of the source, which is not a
-     trail — it is the same shape somewhere else. A trail is the integral of the
-     source along the path, so every step contributes and the weight decays
-     behind. That single difference is what turns a band around the wires into
-     something that streams off them. */
-  const float STEP   = 0.255;
-  const float THETA  = 0.21;
-  const float SHRINK = 0.92;
-  float cs = cos(THETA), sn = sin(THETA);
+  /* ponytail: the shading gradient is taken in WARPED space and is not
+     chain-ruled through the warp's Jacobian, which would need two more vnoiseD
+     for the Hessian of the stream function. At these warp amplitudes the error
+     is a slight slide of the lighting relative to the grain and it is not
+     visible; the contours are drawn from h exactly, so the form itself is
+     always right. Upgrade path if the lighting ever visibly detaches from the
+     grain: compose the warp Jacobian into gSoft. */
+  /* The tilt is deliberately NOT in the shading gradient. It is a constant, so
+     including it would light the whole frame from one fixed angle regardless of
+     the local surface — a flat wash across the picture rather than modelling.
+     What should catch the light is the deviation from the plane, which is the
+     noise. The tilt still governs where the contours and the silhouette go. */
+  vec2 dh = (gSoft * NAMP * HS) + bumpG + ripG;
 
-  /* The path starts AT the fragment. Without that first sample the nearest
-     smoke to a wire is one whole step downwind of it, so the wires come out
-     scrubbed clean with the smoke hanging off to one side — two things again,
-     which is the failure this direction exists to avoid. The zeroth sample is
-     the sheath still attached to the trace and the rest is what has left it.
+  /* ---- composition: where the landmass recedes ----
+     The type is not fought back with a scrim, it is given somewhere to sit. Sea
+     level RISES over the copy column and over the statcard, so those corners are
+     open ground by construction. Both extents are aspect-aware — in a portrait
+     frame the copy spans the width, so copyX goes to 1 and the statcard term
+     switches off because the card is no longer beside anything. */
+  /* Measured against the CONTENT width, not the frame width. The layout is
+     capped at --maxw and centred, so past about 1800px the two stop agreeing:
+     on a 3440 ultrawide the copy occupies the middle 45% of the frame, and a
+     guard in frame coordinates protects empty margin on the left while leaving
+     the statcard standing on open terrain. uContentHW is the actual .hero__grid
+     half-width, read once per resize. */
+  float cx = p.x / min(hw, uContentHW);
 
-     The sheath WIDENS along the path, and that is doing two jobs. Physically it
-     is diffusion: smoke that left the wire a while ago has spread. Practically
-     it is what keeps the trail continuous — the steps are far enough apart to
-     reach the top of the frame in four samples, which is much further than the
-     sheath is wide, so a constant width would draw the plume as a string of
-     separate beads. Widen it and consecutive samples overlap into one taper. */
-  vec2  q = p, vv = v;
-  float wid = 620.0, wgt = 1.0;
-  float smoke = busNear(q, hw, lift, wid, t);
-  for (int i = 0; i < 3; i++) {
-    q -= vv * STEP;
-    vv = vec2(vv.x * cs - vv.y * sn, vv.x * sn + vv.y * cs) * SHRINK;
-    wgt *= 0.74;
-    wid *= 0.42;
-    smoke += wgt * busNear(q, hw, lift, wid, t);
-  }
-  smoke *= 0.50;
+  float copyX = mix(1.0 - smoothstep(-0.62, 0.34, cx), 1.0, narrow);
+  float statX = smoothstep(0.14, 0.98, cx) * (1.0 - narrow);
 
-  /* The carve is what makes it wisps rather than a plume.
-     It is sampled at the FAR end of the advection path, not at the fragment, so
-     neighbouring fragments read it at points that the flow has pulled apart —
-     the noise stretches along the streamlines by itself and never needs a
-     direction of its own. Three octaves, on the same faceted lattice, so the
-     strands crease rather than curve.
-     High contrast on purpose: a gentle multiply modulates smoke, it does not
-     cut it into strands, and modulated smoke is fog. */
-  const float F2 = 3.4;
-  float nz    = fbmR(q * F2 + vec2(t * 0.03, -t * 0.012), 3);
-  float carve = smoothstep(0.34, 0.78, nz);
-  smoke *= 0.10 + 1.65 * carve;
+  /* The vertical ceilings are MEASURED from layout, not guessed at, and this is
+     the second time a magic number here has been wrong. The copy block is a
+     stack of fixed-size type, so the shorter the viewport the larger the
+     fraction of it the block occupies: a ceiling tuned to look right at 900px
+     tall put the sub-label out on bare terrain at 586px, measured at 4.05:1.
+     There is no constant that is correct at every height, so uQuietTop carries
+     the real top edge of each block, in the canvas's own coordinates — which
+     also makes it right for the 124% parallax bleed and for the portrait
+     rearrangement without either being special-cased. */
+  float lowYc = 1.0 - smoothstep(0.02, uQuietTop.x, uvy);
+  float lowYs = 1.0 - smoothstep(0.02, uQuietTop.y, uvy);
+  float quiet = max(lowYc * copyX, lowYs * statX);
 
-  /* Smoke that left the bus earlier than the path reaches back. The advection
-     covers about a third of the frame height, and a plume that stops there reads
-     as a fringe on the wires rather than as something filling the frame. So the
-     bus also smears analytically: slow decay upward, fast decay downward,
-     because smoke rises and because the bottom of the frame is where the type
-     is. Same source, same carve, longer memory — not a second layer, and kept
-     well under the advected term so it can never become the thing you see. */
-  float above = p.y - (0.20 + lift);
-  float haze  = exp(-max(above, 0.0) * 1.7) * exp(-max(-above, 0.0) * 9.0);
-  smoke += 0.10 * haze * carve;
+  /* Plus a mild global floor, and a rise at the extreme left and right so the
+     mass has no visible edge against the side of the frame. Measured against the
+     actual half-width, so an ultrawide opens out at its own edges. */
+  /* Formation and submergence are both just sea level. 1.15 clears the field's
+     maximum height (TILT reaches ~0.79 at the top-right corner plus ~0.26 of
+     noise), so uForm = 0 and uSink = 1 are each a genuinely empty frame — the
+     bare sky gradient the CSS fallback paints. The landmass therefore surfaces
+     highest-first, flooding in from the upper right along the tilt, which is
+     the composition assembling itself toward the copy. */
+  float sea = SEA
+            + 1.15 * (1.0 - uForm)
+            + 1.15 * uSink
+            + 0.52 * quiet
+            + 0.08 * (1.0 - smoothstep(-0.05, 0.34, uvy))
+            + 0.35 * (1.0 - smoothstep(1.04, 0.72, abs(nx)));
 
-  /* Haze the extremes so the field has no visible edge, measured against the
-     actual half-width so an ultrawide fades at its own edges. */
-  float edge = smoothstep(1.02, 0.60, abs(p.x) / hw);
-  smoke *= edge;
-  trace *= edge;
+  float ee   = max(fwidth(h), 1e-5);
+  float mass = smoothstep(-ee, ee, h - sea);
 
-  /* ---- contrast guard ----
-     The headline, sub-label and CTA are light type over this, under .hero__veil.
-     The composition already keeps the sources above them, so this is gentler
-     than the terrain needed — but it is not gone, because the flow is free to
-     wander down there and the guard is what stops one stray plume from taking a
-     line of the headline with it. Both extents are aspect-aware, and the
-     vertical one matters most: the copy is a column in the lower left of a
-     landscape frame and nearly the whole of a portrait one. */
-  float guard = 1.0 - 0.55
-    * mix(1.0 - smoothstep(-0.50, 0.55, p.x / hw), 1.0, narrow)
-    * (1.0 - smoothstep(0.06, mix(0.62, 0.96, narrow), uvy));
+  /* ---- contours ----
+     See the header for why the saturation term is correct rather than a bug. The
+     small constant in the smoothstep width keeps the edge from going infinitely
+     hard on a perfectly flat patch, where fwidth is zero. */
+  float c    = h * BANDS + t * CFLOW;
+  float f    = abs(fract(c) - 0.5);
+  float aa   = fwidth(c);
+  /* During the formation the lines ETCH in: at formLine = 0 the width term
+     vanishes and only a hairline survives at each band centre, so the freshly
+     surfaced crests appear as filaments and thicken to the full duty cycle as
+     the land drains clear. The saturation term scales with it so the first
+     crests do not arrive pre-blown-out. */
+  float formLine = smoothstep(0.10, 0.90, uForm);
+  float line = 1.0 - smoothstep(0.0, aa * 1.2 + 0.008, f - LW * formLine);
+  line = max(line, smoothstep(0.20, 0.58, aa) * formLine);
 
-  smoke = clamp(smoke, 0.0, 1.0) * guard * mix(1.0, 0.82, narrow);
-  trace *= guard;
+  /* The guard is the last word on type contrast, and it works on the LINES
+     rather than on the colour. Washing the whole frame toward the ground would
+     be a flat overlay by another name — the one part of the field that never
+     changes while everything behind it does, which is exactly what reads as
+     pasted on. Softening the contrast of the marks leaves the field moving. */
+  line *= 1.0 - 0.55 * quiet;
+
+  /* The nav is the one piece of type that cannot be given open ground — it is
+     pinned to the top of the frame, which is exactly where the mass sits, and it
+     has no frost until it scrolls. Raising sea level there instead would carve
+     the landmass off the top edge, which is the best part of the composition, so
+     the marks are damped rather than the mass removed. It costs a strip of
+     detail at the very top, where there is the least to lose.
+
+     This has to hit the SPECULAR as well as the lines, and that is the half that
+     actually matters: the worst backdrop under the nav is not a cream line, it
+     is a crest blowout with the highlight on top of it, which is the brightest
+     thing the whole field produces. Damping lines alone left the dark theme with
+     near-white type on near-white ridges.
+
+     The strip's extent is MEASURED (uNavY, the nav's real bottom edge), like
+     every other composition guard here, because the hard-coded 0.86 it replaced
+     was the same class of bug the guards were built against: the nav is a
+     fixed-height bar over a viewport-relative canvas, so at real viewport
+     heights the glyphs sat BELOW the damped strip, and a 20-second watch of the
+     dark theme caught the migrating copper crests taking the links to 3.0:1.
+
+     And the damp is THEME-WEIGHTED, because the two themes fail in opposite
+     directions. Dark puts near-white type over the field, so its enemy is the
+     bright marks — lines and specular — and muting them is correct. Light puts
+     near-black ink over it, and muting the lines there UNCOVERS bare coral and
+     deep troughs, the darkest thing the field makes: measured, the ink went to
+     3.6:1 the moment the cream lines were damped away. So dark mutes the
+     marks, light keeps every line and instead lifts the troughs toward the
+     coral mid-tone. dk is per-fragment, so a theme sweep carries the right
+     guard across with the front. */
+  float navQ = smoothstep(uNavY - 0.05, uNavY, uvy);
+  float dk = mix(uDark, uDarkTo,
+                 1.0 - smoothstep(uSweep.z - 0.45, uSweep.z + 0.45, distance(p, uSweep.xy)));
+  float navD = navQ * dk;
+  line *= 1.0 - 0.84 * navD;
+
+  /* ---- shading ----
+     The light is up and to the left, but it is a UNIFORM now, not a constant:
+     the JS side orbits it a few degrees over ~26s so the crest highlights
+     crawl along the ridges at idle. The specular is the last thing the
+     formation delivers and the first thing the submergence takes away — the
+     glint belongs to a finished, surfaced landscape. */
+  vec3 n = normalize(vec3(-dh * RELIEF, 1.0));
+  float lam  = max(dot(n, uLdir), 0.0);
+  float spec = pow(max(dot(n, uLhalf), 0.0), 18.0) * (1.0 - 0.95 * navD) * (1.0 - 0.6 * quiet)
+             * smoothstep(0.55, 1.0, uForm) * (1.0 - 0.85 * uSink);
+
+  /* ---- palette, selected by the theme FRONT ----
+     Not a scalar cross-fade: when the theme toggles, the JS side expands
+     uSweep's radius from the toggle button and the incoming palette fills the
+     inside of the front, so night visibly crosses the landscape. The 0.45 soft
+     width is broad on purpose — a band of dusk, not a hard terminator. Idle
+     frames have uDarkTo == uDark and the mix collapses to the settled value.
+     dk itself is computed up at the nav guard, which needs it first. */
+  vec3 SKY_HI = mix(SKY_HI_L, SKY_HI_D, dk);
+  vec3 SKY_LO = mix(SKY_LO_L, SKY_LO_D, dk);
+  vec3 CORAL  = mix(CORAL_L,  CORAL_D,  dk);
+  vec3 DEEP   = mix(DEEP_L,   DEEP_D,   dk);
+  vec3 CREAM  = mix(CREAM_L,  CREAM_D,  dk);
+  vec3 HILITE = mix(HILITE_L, HILITE_D, dk);
 
   /* ---- assemble, in linear ---- */
-  vec3 col = mix(GROUND_L, LIFT_L, smoothstep(-0.05, 1.05, uvy));
-  col += SMOKE_L * smoke;
-  col += PHOS_L * trace * 0.55;
+  vec3 body = mix(DEEP, CORAL, smoothstep(0.06, 0.80, lam));
+  // The light half of the nav guard: under the nav, the light theme lifts the
+  // deep troughs toward the coral mid-tone — the ink's worst backdrop is the
+  // darkness, not the lines, which stay at full strength there.
+  body = mix(body, CORAL, 0.45 * navQ * (1.0 - dk));
+  vec3 surf = mix(body, CREAM, line);
+  // The crest highlight rides the lines, because that is where it does in the
+  // reference — the merged bands and the specular peak are the same ridge.
+  surf += HILITE * spec * (0.22 + 0.85 * line);
+
+  /* The cliff face. Without it the silhouette is a paper cutout: the surface
+     runs right up to the cut at full brightness and stops. A darker band just
+     inside reads as the near-vertical wall the cut implies. */
+  float cliff = 1.0 - smoothstep(0.0, 0.085, h - sea);
+  surf = mix(surf, mix(surf * 0.42, DEEP, 0.35), cliff * 0.85);
+
+  vec3 sky = mix(SKY_LO, SKY_HI, smoothstep(-0.12, 1.05, uvy));
+  vec3 col = mix(sky, surf, mass);
 
   col = tone(col);
   col = pow(max(col, 0.0), vec3(1.0 / 2.2)); // linear -> sRGB
 
   /* Grain, weighted into the shadows. It doubles as the dither this needs: a
-     near-flat dark ground across a lot of pixels bands visibly without it, on
+     large smooth ground across a lot of pixels bands visibly without it, on
      exactly the large displays this whole thing exists to serve. */
   float g = hash12(gl_FragCoord.xy + uTime * 137.0);
   float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
@@ -545,6 +573,16 @@ void main() {
 const canvas = document.querySelector<HTMLCanvasElement>('canvas.hero__slot');
 const hero = document.querySelector<HTMLElement>('.hero');
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* The hero's scroll-out progress, fed by reveal.ts from the SAME ScrollTrigger
+   that scrubs the parallax — this module never adds a scroll listener of its
+   own. Module-level so the export needs no handle on init()'s closure; the
+   draw loop reads it every frame. Under reduced motion reveal.ts never calls
+   it and the sea stays put. */
+let scrollP = 0;
+export function setHeroScroll(p: number): void {
+  scrollP = Math.min(1, Math.max(0, p));
+}
 
 function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader | null {
   const sh = gl.createShader(type);
@@ -600,45 +638,59 @@ function init(): void {
   const uPointerAmt = gl.getUniformLocation(prog, 'uPointerAmt');
   const uPointerVel = gl.getUniformLocation(prog, 'uPointerVel');
   const uWake = gl.getUniformLocation(prog, 'uWake');
+  const uDark = gl.getUniformLocation(prog, 'uDark');
+  const uDarkTo = gl.getUniformLocation(prog, 'uDarkTo');
+  const uSweep = gl.getUniformLocation(prog, 'uSweep');
+  const uForm = gl.getUniformLocation(prog, 'uForm');
+  const uSink = gl.getUniformLocation(prog, 'uSink');
+  const uRipOn = gl.getUniformLocation(prog, 'uRipOn');
+  const uRip = gl.getUniformLocation(prog, 'uRip[0]');
+  const uLdir = gl.getUniformLocation(prog, 'uLdir');
+  const uLhalf = gl.getUniformLocation(prog, 'uLhalf');
+  const uContentHW = gl.getUniformLocation(prog, 'uContentHW');
+  const uQuietTop = gl.getUniformLocation(prog, 'uQuietTop');
+  const uNavY = gl.getUniformLocation(prog, 'uNavY');
+  const grid = hero.querySelector<HTMLElement>('.hero__grid');
+  const copyCol = grid?.firstElementChild as HTMLElement | null;
+  const statCard = hero.querySelector<HTMLElement>('.statcard');
 
   /* ---- resolution ladder ----
      Two governors. A pixel budget caps total work; DPR alone is the wrong
      control at the top end, where a 5K panel at 2x asks for ~25M pixels a frame.
      Hard-edged line-work shows resolution loss far more readily than soft
-     gradients do, and this field has both: the traces care about every pixel,
-     the smoke would not notice half of them. The cap is set for the traces.
+     gradients do, and this field is almost nothing but hard line-work — the
+     contours are the subject. The cap is set for them.
      ponytail: fixed steps, not a real adaptive controller. Ceiling: it only ever
      steps down, never recovers if the machine frees up. A rolling window that
      also steps back up is the upgrade if that ever shows. */
-  /* Measured with a GPU timer query, not guessed: 3.795ms per megapixel on the
-     machine this was built on (2.01 / 3.69 / 5.01 MP all landed within 0.1%, so
-     it is genuinely linear in fill), which makes 4.4e6 the largest buffer that
-     still fits a 16.7ms frame. That is DOWN from the ASCII terrain's 5.5e6 and
-     it is a real cost, stated rather than buried: a 1600x900 window on a 2x
-     display renders at about 78% where the terrain managed 88%, and a 3440-wide
-     ultrawide at 85% where the terrain managed 95%. A 1x desktop and a phone
-     both still render 1:1. Advection is simply more expensive than a mark grid.
+  /* Measured with a GPU timer query, not guessed: 2.094ms per megapixel on the
+     machine this was built on. 2.01 / 3.69 / 5.01 MP came back at 2.095 / 2.094
+     / 2.094, so it is linear in fill to within 0.05% and the budget is just the
+     frame time divided by the rate — 16.7 / 2.094 = 7.9e6.
 
-     What the 4.4e6 already reflects, so nobody re-treads it:
-       - The stream function's gradient is analytic, not three finite-difference
-         taps of an fbm. That alone took 4.42 -> 3.72; it is the one optimisation
-         here that paid, and it improved the field as well as the cost.
-       - Three things that looked obvious and measured at zero or worse, all
-         re-checked with the timer: splitting the dead slope out of the routing
-         (the compiler was already eliminating it), merging the three per-run
-         loops into one, and a uniform branch around the pointer terms. GPU
-         intuition about ALU count is not worth much here; the noise is 40% of
-         the frame and almost nothing else registers.
-       - A 3-sigma early-out inside busNear made it 5% SLOWER — the branch costs
-         more than the exp it skips once it defeats the loop unrolling.
-       - Two cuts that did pay in time and were rejected on looks: three
-         advection samples instead of four (15% faster, visibly beaded, the
-         plumes read as repeated stamps) and a sin-based hash (9% faster,
-         directional streaking that turns the wisps glassy and vertical).
+     That is UP from the smoke-and-wiring field's 4.4e6, and the reason is worth
+     stating because it is counter-intuitive for a busier-looking picture: that
+     shader spent four backward-advection samples times five routed runs on every
+     fragment, and this one evaluates a single height field. Six noise
+     evaluations (2 warp + 4 height) against its eleven-plus. The contours are
+     cheap; it is the transport that was expensive.
 
-     Re-measure whenever the advection sample count or the noise changes; those
-     are the only two terms that have ever moved this number. */
-  const MAX_PIXELS = 4.4e6;
+     What the headroom buys, which is the whole point: a 1600x900 window on a 2x
+     display now renders at a full 1:1 buffer where the previous field managed
+     78%, a 4K panel at 1x lands at 98%, and a phone renders at its native 3x.
+     Contour lines are the most resolution-sensitive content this canvas has ever
+     carried, so the budget going up is a real gain in the thing that matters.
+
+     Re-measure whenever the octave count, the warp, or the band density changes;
+     those are the only terms that move this number. If a measurement ever forces
+     a large cut, drop the height fbm to 3 octaves before dropping resolution.
+     Losing an octave costs fine grain the contour lines are already carrying;
+     losing resolution costs the lines themselves, which is the whole subject.
+
+     Harness note: the reading is worthless unless the drawing buffer is
+     allocated ONCE outside the timed batch. Resizing per draw put the three
+     sizes 2x apart and destroyed the linearity the budget depends on. */
+  const MAX_PIXELS = 7.9e6;
   const dpr = window.devicePixelRatio || 1;
   const STEPS = [...new Set([2, 1.5, 1, 0.75].map((s) => Math.min(dpr, s)))];
   let step = 0;
@@ -649,6 +701,51 @@ function init(): void {
     return Math.min(STEPS[step], Math.sqrt(MAX_PIXELS / (cssW * cssH)));
   }
 
+  /* The field's composition guard is measured against the content column, which
+     stops widening at --maxw while the frame keeps going. Read from layout
+     rather than duplicating the token here, so it survives any change to --maxw
+     or --pad-x. Once per resize, never per frame — getBoundingClientRect forces
+     layout. */
+  let contentHW = 1;
+  let quietTop: [number, number] = [0.7, 0.55];
+  let navY = 0.86;
+  function measure(): void {
+    const cssH = canvas!.clientHeight || 1;
+    const w = grid ? grid.clientWidth : canvas!.clientWidth;
+    contentHW = w / 2 / cssH;
+
+    /* The nav damp strip's extent, like the quiet ceilings below: measured, not
+       guessed. The nav is position:fixed and nothing ever transforms it, so its
+       rect is safe to read — and because it is fixed, its viewport-relative
+       bottom is also its position over the canvas at rest, when the hero is at
+       the top of the page (the only time the nav is over the field at all). */
+    const navEl = document.getElementById('nav');
+    if (navEl) {
+      const navBottom = navEl.getBoundingClientRect().bottom;
+      const canvasTopRest = hero!.offsetTop + canvas!.offsetTop;
+      navY = Math.min(1, Math.max(0.6, 1 - (navBottom - canvasTopRest) / cssH));
+    }
+
+    /* Expressed against the CANVAS box, not the hero's, and that is the point:
+       the canvas is 124% of the hero height offset -12% under html.motion and
+       plain inset:0 without it. Measuring against its own box makes the uniform
+       correct in both without either being a special case, because uvy in the
+       shader is exactly gl_FragCoord.y / uRes.y over this same box.
+
+       Offsets rather than getBoundingClientRect, because reveal.ts scrubs a
+       64px y transform onto .hero__grid across the hero's scroll-out. Rects
+       include that, so a resize part-way down the page would measure the copy
+       block 64px from where it rests and bake the wrong ceiling in. offsetTop
+       is layout, not transform, so it reports the resting position always.
+       Margin above each block so the guard covers the type rather than stopping
+       at its cap height. */
+    const gridTop = grid ? grid.offsetTop : 0;
+    const canvasTop = canvas!.offsetTop;
+    const topUvy = (el: HTMLElement | null, fallback: number): number =>
+      el ? 1 - (gridTop + el.offsetTop - canvasTop) / cssH + 0.04 : fallback;
+    quietTop = [topUvy(copyCol, 0.7), topUvy(statCard, 0.55)];
+  }
+
   function resize(): void {
     const s = currentScale();
     const w = Math.max(1, Math.round(canvas!.clientWidth * s));
@@ -657,19 +754,73 @@ function init(): void {
     canvas!.width = w;
     canvas!.height = h;
     gl!.viewport(0, 0, w, h);
+    measure();
   }
 
+  /* ---- teardown scaffolding ----
+     Every listener this init() registers hangs off one AbortController and
+     every observer lands in one list, so a lost context can strip the whole
+     instance and webglcontextrestored can run a genuinely fresh init() —
+     no doubled listeners, no ticker still drawing into a dead context. */
+  const ac = new AbortController();
+  const signal = ac.signal;
+  const observers: Array<{ disconnect(): void }> = [];
+  let stopTicker: () => void = () => {};
+  canvas.addEventListener(
+    'webglcontextlost',
+    (e) => {
+      e.preventDefault();
+      stopTicker();
+      for (const o of observers) o.disconnect();
+      ac.abort();
+      canvas!.classList.remove('is-live'); // the CSS gradient carries it
+    },
+    { signal },
+  );
+
+  /* ---- theme, as a sweeping front ----
+     One-directional: this file watches the attribute, theme.ts stays unaware of
+     the canvas. A toggle expands a radial front from the toggle button — the
+     incoming palette fills the inside — rather than lerping the whole frame.
+     darkFrom/darkTo are the shader's uDark/uDarkTo; between sweeps they agree. */
+  const root = document.documentElement;
+  const isDark = (): number => (root.getAttribute('data-theme') === 'dark' ? 1 : 0);
+  let darkFrom = isDark();
+  let darkTo = darkFrom;
+  const sweep = { on: false, t: 0, x: 0, y: 0, rmax: 2.5 };
+  const SWEEP_S = 0.82; // a beat behind the 360ms CSS chrome fades, on purpose
+
+  /* Client coords -> the shader's field coords. Against the CANVAS box, not the
+     hero's: the canvas is the coordinate frame gl_FragCoord lives in (it bleeds
+     124% for the parallax), and its rect includes the parallax transform, which
+     is the visual truth a cursor or a tap lines up against. */
+  const fieldXY = (cx: number, cy: number): [number, number] => {
+    const r = canvas!.getBoundingClientRect();
+    return [(cx - r.left - r.width / 2) / r.height, (r.height / 2 - (cy - r.top)) / r.height];
+  };
+
+  /* ---- ripple pool: three slots of (x, y, age s, amplitude), oldest recycled.
+     The shader ages them via the z component; a slot dies when draw() sees its
+     age pass RIP_LIFE and zeroes the amplitude. ---- */
+  const rips = new Float32Array(12);
+  let ripHead = 0;
+  const RIP_LIFE = 2.6;
+  const spawnRip = (cx: number, cy: number): void => {
+    const [x, y] = fieldXY(cx, cy);
+    const o = ripHead * 4;
+    rips[o] = x; rips[o + 1] = y; rips[o + 2] = 0; rips[o + 3] = 0.13;
+    ripHead = (ripHead + 1) % 3;
+  };
+
   /* ---- pointer, spring-damped, with velocity for the wake ---- */
-  const target = { x: 0, y: 0, amt: 0, vx: 0, vy: 0, wake: 0 };
-  const eased = { x: 0, y: 0, amt: 0, vx: 0, vy: 0, wake: 0 };
+  const target = { x: 0, y: 0, amt: 0, vx: 0, vy: 0, wake: 0, sink: 0 };
+  const eased = { x: 0, y: 0, amt: 0, vx: 0, vy: 0, wake: 0, sink: 0 };
 
   if (window.matchMedia('(hover: hover) and (pointer: fine)').matches && !reduceMotion) {
     let lastX = 0, lastY = 0, lastT = 0;
     const onMove = rafThrottle((e: PointerEvent) => {
-      const r = hero!.getBoundingClientRect();
       // Same normalisation the shader uses: y up, scaled by height.
-      const x = (e.clientX - r.left - r.width / 2) / r.height;
-      const y = (r.height / 2 - (e.clientY - r.top)) / r.height;
+      const [x, y] = fieldXY(e.clientX, e.clientY);
       const now = performance.now();
       const dt = Math.min(120, now - lastT) || 16;
       if (lastT) {
@@ -684,11 +835,22 @@ function init(): void {
       target.y = y;
       target.amt = 1;
     });
-    hero.addEventListener('pointermove', onMove as EventListener, { passive: true });
-    hero.addEventListener('pointerleave', () => { target.amt = 0; target.wake = 0; });
+    hero.addEventListener('pointermove', onMove as EventListener, { passive: true, signal });
+    hero.addEventListener('pointerleave', () => { target.amt = 0; target.wake = 0; }, { signal });
   }
 
+  /* resize() only re-measures when the buffer changes size, which misses the one
+     reflow that always happens: the webfont landing and re-laying-out the
+     headline under it. One re-measure when fonts settle covers it. */
+  document.fonts?.ready.then(measure);
+
   let time = 0;
+  /* Formation clock. Reduced motion pre-seeds it complete; the animated path
+     holds for 250ms while the is-live opacity fade lands (the empty sea and
+     the CSS fallback gradient are the same picture, so nothing pops), then
+     drains the sea over ~2.6s behind the CSS type entrance. */
+  let formT = reduceMotion ? 1 : 0;
+  let formWait = 250;
 
   function draw(dt: number): void {
     resize();
@@ -700,6 +862,11 @@ function init(): void {
     eased.vx += (target.vx - eased.vx) * Math.min(1, dt * 0.012);
     eased.vy += (target.vy - eased.vy) * Math.min(1, dt * 0.012);
     eased.wake += (target.wake - eased.wake) * Math.min(1, dt * 0.010);
+    // The submergence trails the scrub slightly so the sea has weight; the
+    // 1.35 power at upload holds the landmass through the first stretch of
+    // scroll and lets the sink accelerate once leaving is clearly the intent.
+    target.sink = scrollP;
+    eased.sink += (target.sink - eased.sink) * Math.min(1, dt * 0.012);
     // The wake decays on its own, so a cursor that stops leaves a trail that
     // settles rather than a displacement that sticks.
     const decay = Math.pow(0.9955, dt);
@@ -707,24 +874,144 @@ function init(): void {
     target.vx *= decay;
     target.vy *= decay;
 
+    // Formation: smoothstep-eased — a gentle first beat under the opacity
+    // fade, the sweeping drain through the middle, a soft settle.
+    if (formWait > 0) formWait -= dt;
+    else if (formT < 1) formT = Math.min(1, formT + dt / 2600);
+    const form = formT * formT * (3 - 2 * formT);
+
+    // Theme front. Idle keeps the radius past rmax, so the whole frame reads
+    // the incoming value — which equals the settled one between sweeps.
+    let sweepR = sweep.rmax + 1;
+    if (sweep.on) {
+      sweep.t += dt / 1000;
+      const sp = Math.min(1, sweep.t / SWEEP_S);
+      const se = 1 - (1 - sp) * (1 - sp); // fast off the toggle, easing wide
+      sweepR = -0.5 + (sweep.rmax + 0.5) * se;
+      if (sp >= 1) { sweep.on = false; darkFrom = darkTo; }
+    }
+
+    // Age the ripples; a slot past its life zeroes out and frees the gate.
+    let ripOn = 0;
+    for (let i = 0; i < 3; i++) {
+      const o = i * 4;
+      if (rips[o + 3] > 0) {
+        rips[o + 2] += dt / 1000;
+        if (rips[o + 2] > RIP_LIFE) rips[o + 3] = 0;
+        else ripOn = 1;
+      }
+    }
+
+    // Living light: ±4 degrees about the vertical axis over ~26s. Rotating
+    // BOTH the light and its half vector by the same angle keeps the pair
+    // geometrically consistent, and time = 0 reproduces the old constants
+    // exactly — which is what the reduced-motion frame renders.
+    const th = 0.07 * Math.sin(time * 0.2417);
+    const cs = Math.cos(th), sn = Math.sin(th);
+
     gl!.uniform2f(uRes, canvas!.width, canvas!.height);
     gl!.uniform1f(uTime, time);
     gl!.uniform2f(uPointer, eased.x, eased.y);
     gl!.uniform1f(uPointerAmt, eased.amt);
     gl!.uniform2f(uPointerVel, eased.vx, eased.vy);
     gl!.uniform1f(uWake, eased.wake);
+    gl!.uniform1f(uDark, darkFrom);
+    gl!.uniform1f(uDarkTo, darkTo);
+    gl!.uniform3f(uSweep, sweep.x, sweep.y, sweepR);
+    gl!.uniform1f(uForm, form);
+    gl!.uniform1f(uSink, Math.pow(eased.sink, 1.35));
+    gl!.uniform1f(uRipOn, ripOn);
+    gl!.uniform4fv(uRip, rips);
+    gl!.uniform3f(uLdir, -0.5620 * cs - 0.6484 * sn, -0.5620 * sn + 0.6484 * cs, 0.5133);
+    gl!.uniform3f(uLhalf, -0.3517 * cs - 0.4058 * sn, -0.3517 * sn + 0.4058 * cs, 0.8437);
+    gl!.uniform1f(uContentHW, contentHW);
+    gl!.uniform2f(uQuietTop, quietTop[0], quietTop[1]);
+    gl!.uniform1f(uNavY, navY);
     gl!.drawArrays(gl!.TRIANGLE_STRIP, 0, 4);
   }
 
   /* ---- static path: one frame, no ticker, no clock ---- */
   if (reduceMotion) {
-    draw(0);
+    const still = (): void => {
+      // No ticker to sweep on, so the theme snaps. formT is pre-seeded to 1,
+      // so the one frame is the COMPLETE landscape, never a half-formed one.
+      darkFrom = darkTo = isDark();
+      draw(0);
+    };
+    measure();
+    still();
     canvas.classList.add('is-live');
     // Observe the element, not the window: the canvas is 124%-height inside a
     // 100vh hero, so it changes size for reasons a resize event never reports.
-    new ResizeObserver(() => draw(0)).observe(canvas);
+    const ro = new ResizeObserver(still);
+    ro.observe(canvas);
+    const mo = new MutationObserver(still);
+    mo.observe(root, { attributeFilter: ['data-theme'] });
+    observers.push(ro, mo);
     return;
   }
+
+  /* A toggle while the ticker runs starts the sweep from the toggle button; a
+     toggle while it is stopped (hero off-screen, tab hidden) snaps instead, so
+     the field is never caught mid-front when it scrolls back into view. */
+  const themeMo = new MutationObserver(() => {
+    const to = isDark();
+    if (to === darkTo) return; // attribute rewritten with the same value
+    darkFrom = darkTo;         // a rapid re-toggle completes the old front instantly
+    darkTo = to;
+    if (!running) {
+      darkFrom = to;
+      return;
+    }
+    const toggle = document.getElementById('modeToggle');
+    const r = canvas!.getBoundingClientRect();
+    if (toggle) {
+      const b = toggle.getBoundingClientRect();
+      [sweep.x, sweep.y] = fieldXY(b.left + b.width / 2, b.top + b.height / 2);
+    } else {
+      // No toggle to be found — sweep from the top right, where it lives.
+      sweep.x = 0.45 * (r.width / r.height);
+      sweep.y = 0.45;
+    }
+    // Far enough to carry the soft edge past the frame's farthest corner.
+    const hw = (0.5 * r.width) / r.height;
+    sweep.rmax = Math.hypot(hw + Math.abs(sweep.x), 0.5 + Math.abs(sweep.y)) + 0.45;
+    sweep.t = 0;
+    sweep.on = true;
+  });
+  themeMo.observe(root, { attributeFilter: ['data-theme'] });
+  observers.push(themeMo);
+
+  /* ---- ripples: press with a mouse or pen, TAP on touch ----
+     pointerdown on a touch screen fires at the start of every scroll flick, so
+     touch waits for a pointerup that stayed put — a real tap. Deliberately NOT
+     gated on the fine-pointer media query: this is the one field interaction
+     phones get. */
+  let tapX = 0, tapY = 0, tapT = -1e4;
+  hero.addEventListener(
+    'pointerdown',
+    (e: PointerEvent) => {
+      if (e.pointerType === 'touch') {
+        tapX = e.clientX; tapY = e.clientY; tapT = performance.now();
+      } else {
+        spawnRip(e.clientX, e.clientY);
+      }
+    },
+    { passive: true, signal },
+  );
+  hero.addEventListener(
+    'pointerup',
+    (e: PointerEvent) => {
+      if (
+        e.pointerType === 'touch' &&
+        performance.now() - tapT < 350 &&
+        Math.hypot(e.clientX - tapX, e.clientY - tapY) < 12
+      ) {
+        spawnRip(e.clientX, e.clientY);
+      }
+    },
+    { passive: true, signal },
+  );
 
   /* ---- animated path ---- */
   let slow = 0;
@@ -768,27 +1055,33 @@ function init(): void {
     if (on) gsap.ticker.add(tick);
     else gsap.ticker.remove(tick);
   }
+  stopTicker = (): void => run(false);
 
   // No GPU work for a hero nobody is looking at.
-  new IntersectionObserver(([e]) => run(e.isIntersecting && !document.hidden)).observe(hero);
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) run(false);
-  });
+  const io = new IntersectionObserver(([e]) => run(e.isIntersecting && !document.hidden));
+  io.observe(hero);
+  observers.push(io);
+  document.addEventListener(
+    'visibilitychange',
+    () => {
+      if (document.hidden) run(false);
+    },
+    { signal },
+  );
 
-  /* ponytail: a lost context drops to the CSS gradient rather than rebuilding.
-     Driver resets are rare and the fallback is a real design, not a blank box.
-     Upgrade path: keep the shader sources around and re-run init() on
-     webglcontextrestored. */
-  canvas.addEventListener('webglcontextlost', (e) => {
-    e.preventDefault();
-    run(false);
-    canvas.classList.remove('is-live');
-  });
-
+  /* Explicit rather than relying on resize(): a re-init after a restored
+     context finds the canvas already at the right buffer size, so resize()
+     early-returns and would leave the composition guards at their defaults. */
+  measure();
   draw(0);
   canvas.classList.add('is-live');
   run(true);
 }
+
+/* A restored context re-runs init() from scratch. The lost-context handler
+   inside init() stripped the old instance's listeners, observers and ticker,
+   so this is a clean second boot, not a doubling. */
+canvas?.addEventListener('webglcontextrestored', () => init());
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);

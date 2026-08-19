@@ -168,9 +168,16 @@
   outline-offset: 3px;
   border-radius: 2px;
 }
+/* The halo has to contrast with the backdrop, not with the outline, so it flips
+   with the hero field: a light ring over the pale coral relief, a dark one over
+   the deep variant and over the dark-photography sections. */
 .on-hero :focus-visible,
 .hero :focus-visible {
   outline-color: var(--on-img);
+  box-shadow: 0 0 0 5px rgba(250, 240, 234, 0.62);
+}
+[data-theme="dark"] .on-hero :focus-visible,
+[data-theme="dark"] .hero :focus-visible {
   box-shadow: 0 0 0 5px rgba(24, 18, 12, 0.45);
 }
 
@@ -295,15 +302,17 @@ img { display: block; max-width: 100%; }
 .btn--ghost { background: transparent; }
 .btn--ghost:hover { background: var(--bleed); }
 
-/* on photography */
+/* on photography — border and fill derive from currentColor so the pill works
+   over a dark backdrop (manifesto, device, dark-theme hero) and over the light
+   hero field without a second rule for each. */
 .btn--onimg {
   color: var(--on-img);
-  border-color: rgba(246, 242, 234, 0.42);
-  background: rgba(246, 242, 234, 0.08);
+  border-color: color-mix(in srgb, currentColor 42%, transparent);
+  background: color-mix(in srgb, currentColor 8%, transparent);
 }
 .btn--onimg:hover {
-  background: rgba(246, 242, 234, 0.16);
-  border-color: rgba(246, 242, 234, 0.8);
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  border-color: color-mix(in srgb, currentColor 80%, transparent);
 }
 
 /* signature warm */
@@ -364,14 +373,23 @@ section { position: relative; }
   border-bottom-color: var(--hair-soft);
   height: 64px;
 }
-/* over the hero, nav type is light */
+/* Over the hero, nav type takes the hero's on-image colour — dark ink over the
+   light coral field, light over the deep one. The scoped --on-img override for
+   .nav.on-hero sits with the hero block below; everything here derives from it. */
 .nav.on-hero .nav-link,
 .nav.on-hero .os-mark,
 .nav.on-hero .nav-toggle { color: var(--on-img); }
 .nav.on-hero .nav-link { color: var(--on-img-mute); }
-.nav.on-hero .btn { color: var(--on-img); border-color: rgba(246,242,234,0.42); background: rgba(246,242,234,0.08); }
-.nav.on-hero .btn:hover { background: rgba(246,242,234,0.16); border-color: rgba(246,242,234,0.8); }
-.nav.on-hero .nav-toggle { border-color: rgba(246,242,234,0.4); }
+.nav.on-hero .btn {
+  color: var(--on-img);
+  border-color: color-mix(in srgb, currentColor 42%, transparent);
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+.nav.on-hero .btn:hover {
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  border-color: color-mix(in srgb, currentColor 80%, transparent);
+}
+.nav.on-hero .nav-toggle { border-color: color-mix(in srgb, currentColor 40%, transparent); }
 
 .os-mark {
   display: inline-flex; align-items: center;
@@ -383,7 +401,11 @@ section { position: relative; }
      and whenever the surrounding ground is dark (dark theme) */
   transition: filter 360ms var(--ease);
 }
-.nav.on-hero .os-mark__img,
+/* The mark artwork is dark on transparent, so it only wants inverting when the
+   ground behind it is dark. That used to include the hero unconditionally; the
+   light theme's hero field is now pale, and inverting there would bleach the
+   mark into it. The dark theme rule already covers the case where the hero is
+   the deep variant, so .nav.on-hero drops out entirely. */
 [data-theme="dark"] .os-mark__img { filter: invert(1) brightness(1.8); }
 .nav-center { display: flex; gap: clamp(20px, 2.4vw, 40px); justify-content: center; }
 .nav-link {
@@ -420,17 +442,53 @@ section { position: relative; }
 /* ============================================================
    HERO
    ============================================================ */
+/* The hero field is LIGHT in the light theme — a coral relief landscape on a
+   pale rose ground — so hero type is dark ink over it, the reverse of every
+   other full-bleed section on the page.
+ *
+ * These are SCOPED overrides, deliberately. --on-img / --on-img-mute are global
+ * tokens and the manifesto panel, the device panel and the io labels all still
+ * sit on dark photography; redefining them at :root would invert type that is
+ * still correct. Scope covers .hero and .nav.on-hero, which are the only two
+ * things sitting on this particular backdrop.
+ *
+ * In dark mode the field becomes the deep maroon variant, so the type goes back
+ * to the global light-on-image values. */
+/* Near-black rather than a soft charcoal, and the mute alpha is high. The nav
+   links are the constraint: they are pinned to the top of the frame where the
+   landmass sits and they have no frost until the page scrolls, so they have to
+   clear AA against bare coral (the darkest thing the field puts under type),
+   not just against the cream lines and the open ground. */
+.hero,
+.nav.on-hero {
+  --on-img:      #12100E;
+  --on-img-mute: rgba(18, 16, 14, 0.94);
+}
+/* Higher alpha than the global 0.74 for the same reason the light scope uses
+   0.94: over the deep field the muted labels are the only type that ever lands
+   on a lit contour, and 0.74 measured 4.50:1 on the nav links. */
+[data-theme="dark"] .hero,
+[data-theme="dark"] .nav.on-hero {
+  --on-img:      #F6F2EA;
+  --on-img-mute: rgba(246, 242, 234, 0.88);
+}
+
 /* The hero's own background is the fallback for the generated backdrop: it shows
    on the first frame, and it stands alone if WebGL is unavailable or the context
-   is lost. It must track the shader's ground — the same near-flat dark warm,
-   with the warm lift where the bus sits and its smoke collects rather than off
-   to the right where the old terrain was brightest. Get this wrong and the
-   no-WebGL path looks like a different site. */
+   is lost. It must track the shader's ground — the pale rose floor rising to the
+   dusty mauve at the top of the frame, with the coral flush in the upper band
+   where the landmass sits. Get this wrong and the no-WebGL path looks like a
+   different site. */
 .hero {
   position: relative; min-height: 100vh; display: flex; align-items: flex-end; overflow: hidden;
   background:
-    radial-gradient(112% 60% at 52% 24%, rgba(232, 184, 126, 0.13) 0%, rgba(232, 184, 126, 0) 68%),
-    linear-gradient(to top, #16120E 0%, #1A1611 26%, #241E17 64%, #302820 100%);
+    radial-gradient(104% 62% at 58% 26%, rgba(224, 101, 106, 0.30) 0%, rgba(224, 101, 106, 0) 72%),
+    linear-gradient(to top, #EFDCD4 0%, #E8D2CB 24%, #C9A3A6 66%, #A87F86 100%);
+}
+[data-theme="dark"] .hero {
+  background:
+    radial-gradient(104% 62% at 58% 26%, rgba(122, 46, 54, 0.42) 0%, rgba(122, 46, 54, 0) 72%),
+    linear-gradient(to top, #332123 0%, #2E1D20 24%, #241619 66%, #1C1214 100%);
 }
 /* every full-bleed background image fills its positioned parent */
 .manifesto__slot, .device__slot {
@@ -454,23 +512,30 @@ section { position: relative; }
 .hero__veil {
   position: absolute; inset: 0; z-index: 1; pointer-events: none;
   background:
-    radial-gradient(118% 88% at 6% 104%, rgba(24,18,12,0.66) 0%, rgba(24,18,12,0.32) 40%, rgba(24,18,12,0) 74%),
-    linear-gradient(to top, rgba(24,18,12,0.30) 0%, rgba(24,18,12,0.09) 34%, rgba(24,18,12,0) 66%, rgba(24,18,12,0.08) 100%);
+    radial-gradient(118% 88% at 6% 104%, rgba(250,240,234,0.72) 0%, rgba(250,240,234,0.36) 40%, rgba(250,240,234,0) 74%),
+    linear-gradient(to top, rgba(250,240,234,0.34) 0%, rgba(250,240,234,0.10) 34%, rgba(250,240,234,0) 66%, rgba(168,127,134,0.10) 100%);
+}
+/* Dark theme puts the deep field back, so the wedge goes back to being dark. */
+[data-theme="dark"] .hero__veil {
+  background:
+    radial-gradient(118% 88% at 6% 104%, rgba(18,12,13,0.68) 0%, rgba(18,12,13,0.34) 40%, rgba(18,12,13,0) 74%),
+    linear-gradient(to top, rgba(18,12,13,0.32) 0%, rgba(18,12,13,0.10) 34%, rgba(18,12,13,0) 66%, rgba(18,12,13,0.08) 100%);
 }
 
-/* The statcard is the weakest type pairing on the page, and the reason is that
-   --frost-fill is a LIGHT tint: over a dark hero it sits as a pale grey panel
-   with near-white text on it. Dark-on-dark inside the hero only, so the panel
-   reads as smoked glass over the field rather than as a sticker on top of it.
+/* --frost-fill is a LIGHT tint, which is now the correct pairing: the light
+   theme's hero field is pale, so the generic frost reads as glass over it and
+   the statcard needs no override at all. Dark theme is the case that breaks —
+   a pale grey panel with near-white text on it was the weakest type pairing on
+   the page — so the dark fill survives, scoped to the dark theme.
    Scoped to .statcard rather than .frost so the CTA pill is untouched. */
-.hero .statcard {
+[data-theme="dark"] .hero .statcard {
   --frost-fill: rgba(22, 18, 13, 0.50);
   --frost-edge: rgba(246, 242, 234, 0.20);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   /* The generic fallback swaps to a near-opaque LIGHT tint, which would undo the
      whole point of the block above. */
-  .hero .statcard { background: rgba(22, 18, 13, 0.90); }
+  [data-theme="dark"] .hero .statcard { background: rgba(22, 18, 13, 0.90); }
 }
 .hero__grid {
   position: relative; z-index: 2; width: 100%;
@@ -483,7 +548,9 @@ section { position: relative; }
   font-size: clamp(44px, 7vw, 104px);
   max-width: 13ch; margin-bottom: 36px;
 }
-.hero__h1 em { font-style: normal; color: rgba(246,242,234,0.6); }
+/* Derived from currentColor rather than a literal, so it follows the scoped
+   --on-img in both themes — and, incidentally, responds to prefers-contrast. */
+.hero__h1 em { font-style: normal; color: color-mix(in srgb, currentColor 72%, transparent); }
 .hero__cta { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
 
 /* floating stat card */
@@ -839,8 +906,13 @@ section { position: relative; }
      correction the shader makes with its `narrow` term. */
   .hero__veil {
     background:
-      radial-gradient(140% 74% at 50% 108%, rgba(24,18,12,0.68) 0%, rgba(24,18,12,0.38) 44%, rgba(24,18,12,0) 80%),
-      linear-gradient(to top, rgba(24,18,12,0.32) 0%, rgba(24,18,12,0.12) 44%, rgba(24,18,12,0) 76%);
+      radial-gradient(140% 74% at 50% 108%, rgba(250,240,234,0.74) 0%, rgba(250,240,234,0.42) 44%, rgba(250,240,234,0) 80%),
+      linear-gradient(to top, rgba(250,240,234,0.36) 0%, rgba(250,240,234,0.13) 44%, rgba(250,240,234,0) 76%);
+  }
+  [data-theme="dark"] .hero__veil {
+    background:
+      radial-gradient(140% 74% at 50% 108%, rgba(18,12,13,0.70) 0%, rgba(18,12,13,0.40) 44%, rgba(18,12,13,0) 80%),
+      linear-gradient(to top, rgba(18,12,13,0.34) 0%, rgba(18,12,13,0.13) 44%, rgba(18,12,13,0) 76%);
   }
   .nav { grid-template-columns: 1fr auto; }
   .nav-center { display: none; }

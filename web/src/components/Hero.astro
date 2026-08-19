@@ -31,9 +31,13 @@ const leadWords = hero.headlineLead.split(/(\s+)/).filter((p) => p.trim());
       <p class="statcard__note">{hero.stat.note}</p>
       <div class="statcard__chart">
         <svg viewBox="0 0 300 46" preserveAspectRatio="none" fill="none">
+          {/* currentColor, not a literal — .statcard sets color: var(--on-img),
+              which the hero scopes to dark ink over the light field and back to
+              near-white over the dark one. A hardcoded #F6F2EA would survive
+              both the theme flip and the contrast probe's colour override. */}
           <polyline class="statcard__line" points="0,40 38,34 76,36 114,26 152,28 190,18 228,20 266,9 300,6"
-            stroke="#F6F2EA" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></polyline>
-          <circle class="statcard__dot" cx="300" cy="6" r="2.6" fill="#F6F2EA"></circle>
+            stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+          <circle class="statcard__dot" cx="300" cy="6" r="2.6" fill="currentColor"></circle>
         </svg>
       </div>
     </div>
