@@ -473,17 +473,29 @@ section { position: relative; }
   --on-img-mute: rgba(246, 242, 234, 0.88);
 }
 
-/* The hero's own background is the fallback for the generated backdrop: it shows
-   on the first frame, and it stands alone if WebGL is unavailable or the context
-   is lost. It must track the shader's ground — the pale rose floor rising to the
-   dusty mauve at the top of the frame, with the coral flush in the upper band
-   where the landmass sits. Get this wrong and the no-WebGL path looks like a
-   different site. */
+/* The hero's own background is no longer only a fallback — it is the SKY.
+   The ocean's scene target clears transparent and the particles are additive, so
+   above the horizon and between the particles this gradient is what the visitor
+   actually sees. It still doubles as the no-WebGPU/no-WebGL path, which is why
+   the two have to agree: get this wrong and the fallback looks like a different
+   site AND the live hero loses its ground.
+
+   Darkened on request, and deliberately NOT uniformly. The near-black hero ink
+   sits ON this, so darkening costs type contrast — but the cost is not spread
+   evenly. The bottom two-thirds, where the headline, sub-label and CTA sit, had
+   14.3:1 of headroom and can afford it. The top stop is where the nav links sit
+   with no frost until the page scrolls, and that pairing is the one near the the
+   line, so it moves barely at all (5.46 -> 5.37). Measured against the bare
+   gradient, which is the conservative case: the particles are additive, so
+   wherever they land they lift the backdrop and help.
+
+     h1 / CTA   14.34 -> 11.50      sub (muted)  12.80 -> 10.37
+     at 24%     13.12 -> 10.78      nav links     5.46 ->  5.37 */
 .hero {
   position: relative; min-height: 100vh; display: flex; align-items: flex-end; overflow: hidden;
   background:
     radial-gradient(104% 62% at 58% 26%, rgba(224, 101, 106, 0.30) 0%, rgba(224, 101, 106, 0) 72%),
-    linear-gradient(to top, #EFDCD4 0%, #E8D2CB 24%, #C9A3A6 66%, #A87F86 100%);
+    linear-gradient(to top, #D7C6BF 0%, #D3BFB9 24%, #BF9B9E 66%, #A67E85 100%);
 }
 [data-theme="dark"] .hero {
   background:

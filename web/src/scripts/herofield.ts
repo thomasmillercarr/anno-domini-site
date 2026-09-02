@@ -117,6 +117,7 @@
 
 import { gsap } from 'gsap';
 import { rafThrottle } from './pointer';
+import { createOcean, type Ocean } from './oceanfft';
 
 const VERT = `#version 300 es
 void main() {
@@ -125,8 +126,10 @@ void main() {
   gl_Position = vec4(p, 0.0, 1.0);
 }`;
 
-const FRAG = `#version 300 es
-precision highp float;
+/* No #version directive in here: it has to be the FIRST line of the source, and
+   the two defines that select the variant and the height source are injected
+   ahead of the body at compile time. buildFrag() below owns that. */
+const FRAG_BODY = `precision highp float;
 
 uniform vec2  uRes;
 uniform float uTime;
@@ -146,6 +149,14 @@ uniform vec3  uLhalf;       // matching half vector, orbited in lockstep
 uniform float uContentHW;   // half-width of .hero__grid, in field units
 uniform vec2  uQuietTop;    // uvy of the top of (copy column, statcard)
 uniform float uNavY;        // uvy of the nav's BOTTOM edge, measured from layout
+#if OCEAN
+uniform sampler2D uDisp;    // (height, slopeX, slopeZ, foam), normalised
+uniform sampler2D uRaw;     // (height, Dx, Dz, 0), raw — the choppy warp source
+uniform float uOScale;      // field units -> patch uv
+uniform float uOWarp;       // choppy displacement, in uv
+uniform vec2  uODrift;      // slow uv drift across the patch
+uniform float uON;          // patch resolution, for the interpolation fade
+#endif
 
 out vec4 fragColor;
 
@@ -223,6 +234,114 @@ const float SEA    = -0.06; // silhouette cut
  * is where the headline column is. */
 const float TILT = 0.95;
 const vec2  TDIR = vec2(0.42, 0.91);
+
+#if OCEAN
+/* ---- the ocean's terms ----
+ *
+ * The FFT surface arrives at unit variance (oceanfft normalises by the measured
+ * sigma of its own spectrum), so OAMP is directly comparable to NAMP above and
+ * the TILT ratio the whole look depends on carries across unchanged.
+ *
+ * Which is the point worth stating: the tilt is still doing its job here, but it
+ * has help now. Phillips' directional term already biases the crests along one
+ * wind vector, so the field arrives with a grain instead of being isotropic. The
+ * tilt no longer has to manufacture the parallelism single-handed — it is setting
+ * composition (mass high and right, ground open toward the copy) more than it is
+ * suppressing rings. See DIR_POW in oceanfft.ts for the other half of this.
+ */
+  #if VARIANT == 2
+    /* Tide: the tilt comes down so the frame reads as sea rather than as a
+       landmass with a shoreline. Less plane, more water — which means the quiet
+       guards carry more of the composition than they do in variant 1. */
+    const float OTILT = 0.55;
+    const float OAMP  = 0.110;
+    const float OSEA  = SEA;
+    const float FORMH = 1.05;
+  #elif VARIANT == 3
+    /* Horizon: perspective supplies the composition, so there is no tilt at all.
+       FORMH clears three sigma of a unit-variance field with room to spare, so
+       uForm = 0 is still a genuinely empty frame. */
+    const float OTILT = 0.0;
+    const float OAMP  = 0.200;
+    /* No shoreline in a perspective ocean: the cut has to sit below the whole
+       surface or the water breaks into islands. -3.6 is under three sigma, so
+       the far tail costs a handful of specks and nothing structural. */
+    const float OSEA  = -0.95;
+    const float FORMH = 1.90;
+  #else
+    const float OTILT = 0.95;
+    /* Solved, not dialled: the field's slope-per-uv was measured off the
+       spectrum (28.9 at these settings), so OAMP = (TILT/3) / (slope x scale)
+       is what puts the tilt three to one over the noise on the GRADIENT, which
+       is the ratio the "plane, warped" look actually depends on. */
+    const float OAMP  = 0.170;
+    const float OSEA  = SEA;
+    /* 1.15 cleared the old fbm, whose octaves are bounded. This field is a
+       Gaussian with a real tail, so the empty frame needs three sigma of the
+       noise term plus the tilt's corner value, or uForm = 0 leaves stray peaks
+       standing in what is supposed to be bare sky. */
+    const float FORMH = 1.55;
+  #endif
+#else
+const float OTILT = TILT;
+const float OAMP  = NAMP;
+const float OSEA  = SEA;
+const float FORMH = 1.15;
+#endif
+
+#if VARIANT == 3
+/* ---- the grazing camera ----
+ * Pitched down by CAM_A from horizontal, looking along -z, focal length 1. The
+ * horizon lands where the ray stops descending, at screen y = tan(CAM_A), so
+ * CAM_A alone places it: 0.30 puts it in the upper third with the copy column
+ * clear underneath. CAM_H is the only thing setting the apparent wave scale,
+ * because a plane has no other length in it.
+ */
+const float CAM_A = 0.2915;   // atan(0.30)
+const float CAM_H = 0.42;
+const float FOGK  = 0.085;    // distance at which the surface has gone to sky
+#endif
+
+#if OCEAN
+/* Quintic-faded bilinear, wrapped. Four texel fetches and a C2 fade, which is
+   the same interpolant vnoiseD uses and for exactly the same reason: hardware
+   bilinear is only C0, so its GRADIENT jumps at every texel boundary, and this
+   field is drawn as iso-lines — which trace the gradient. A C0 height field puts
+   a visible kink in every contour along every texel edge of a 256x256 grid, a
+   diamond lattice laid over the whole frame. It is the single most obvious way
+   to make a sampled height field look sampled.
+
+   Interpolating the whole vec4 rather than one channel is free at the fetch
+   level (the texel is fetched entire either way) and gives the slopes the same
+   continuity as the height, so the shading gets it too.
+
+   texelFetch has no wrap mode of its own, hence the wrap arithmetic — which is
+   what makes the patch tile rather than clamp at its edges. It is done in FLOAT,
+   with mod(), and that is not a style choice: GLSL ES leaves integer % undefined
+   when either operand is negative, and half of any centred frame has a negative
+   texel index. Doing it with int % produced hard axis-aligned rectangles across
+   the whole field on the first run — the tell is that they were rectangles, since
+   a broken wrap breaks x and y independently.
+
+   ponytail: textureGather would collapse the four fetches into one instruction,
+   but it is GLSL ES 3.10 and WebGL2 is 3.00. Revisit if this ever moves to
+   WebGPU, where the reference lives anyway. */
+vec4 qtex(sampler2D s, vec2 uv) {
+  vec2 t = uv * uON - 0.5;
+  vec2 i = floor(t);
+  vec2 f = t - i;
+  vec2 w = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  vec2 m0 = mod(i, uON);            // mod() is defined for negatives; % is not
+  vec2 m1 = mod(i + 1.0, uON);
+  ivec2 b0 = ivec2(m0);
+  ivec2 b1 = ivec2(m1);
+  vec4 c00 = texelFetch(s, b0, 0);
+  vec4 c10 = texelFetch(s, ivec2(b1.x, b0.y), 0);
+  vec4 c01 = texelFetch(s, ivec2(b0.x, b1.y), 0);
+  vec4 c11 = texelFetch(s, b1, 0);
+  return mix(mix(c00, c10, w.x), mix(c01, c11, w.x), w.y);
+}
+#endif
 
 float hash21(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -347,6 +466,27 @@ void main() {
      rather than sitting beside it, so both take far more of the height. */
   float narrow = 1.0 - smoothstep(0.55, 0.80, hw);
 
+  /* p stays the SCREEN coordinate throughout — the pointer, the ripples, the
+     theme front and every composition guard are authored against it and against
+     the measured layout uniforms, so they must not move when the field does.
+     fp is the coordinate the FIELD is sampled in. For the plan-view variants the
+     two are the same; for the horizon variant fp is a point on the water plane,
+     which is a different space entirely and only the field may use it. */
+  vec2  fp    = p;
+  float fog   = 0.0;   // 0 at the near edge, 1 at the horizon
+  float voidy = 0.0;   // 1 where the ray never meets the plane
+#if VARIANT == 3
+  float ca = cos(CAM_A), sa = sin(CAM_A);
+  vec3  rd = normalize(vec3(p.x, p.y * ca - sa, -(p.y * sa + ca)));
+  /* Above the horizon the ray escapes and there is nothing to sample. Clamp
+     rather than branch: a divergent ray would send fp to infinity and take the
+     contour fwidth with it, and the sky is painted over the result anyway. */
+  voidy = step(-1e-3, rd.y);
+  float td = CAM_H / max(-rd.y, 1e-3);
+  fp  = vec2(rd.x, -rd.z) * td * 0.55;
+  fog = td * FOGK / (1.0 + td * FOGK);
+#endif
+
   /* ---- pointer, as a disturbance in the field ----
      Gated on the uniform, not on anything per-fragment. uPointerAmt is the same
      for every fragment in the draw, so this is uniform control flow and the
@@ -393,15 +533,45 @@ void main() {
   }
 
   /* ---- the field ----
-     Both domains drift, and on different vectors: the warp drifting reshapes the
-     folds, the height drifting slides the whole landform. Together that is the
-     morph. Neither costs an evaluation. */
-  vec2 wq = p * WS + vec2(t * 0.011, -t * 0.008);
-  vec2 q  = p * HS + WARP * curl(wq) + wpush + vec2(-t * 0.016, t * 0.009);
+     Two fetches where there used to be six noise evaluations, which is why the
+     ocean makes the expensive pass CHEAPER rather than dearer. The pipeline that
+     fills these textures runs at 256x256; this runs at the display's resolution.
+
+     The two fetches are dependent, and deliberately so. Sampling the surface at
+     the plain uv would give the height of the water column standing at that
+     grid point, but a choppy ocean's water is not above its grid point — the
+     horizontal displacement D has carried it sideways, which is the entire
+     reason crests are sharp and troughs are broad. So D is read first and the
+     height is read at uv - D: the standard inverse-map approximation, and
+     structurally the same two-stage lookup the curl warp used to be.
+
+     Which is the neat part of this whole port. The old warp was a hand-rolled
+     divergence-free field, chosen divergence-free because a warp with sinks
+     bunches iso-lines into knots. The ocean's displacement is emphatically NOT
+     divergence-free — it converges, that is what folding IS — and here that is
+     correct rather than a regression, because the convergence is physical and
+     the Jacobian tells us exactly where it happened. Those knots are foam. */
+  float foam = 0.0;
+#if OCEAN
+  vec2 uv0 = fp * uOScale + uODrift + wpush * 0.35;
+  vec2 D   = qtex(uRaw, uv0).gb * uOWarp;
+  vec4 S   = qtex(uDisp, uv0 - D);
+  foam = S.w;
+  float h = OAMP * S.x + bump + rip + OTILT * dot(fp, TDIR);
+#else
+  /* ponytail: the noise field is kept as the fallback for GPUs without
+     EXT_color_buffer_float — roughly 2% of visitors, on the single most
+     important visual on the site, where the alternative is the flat CSS
+     gradient. It is a genuine duplicate of the height source and nothing else;
+     every term below is shared. Delete it if the extension ever becomes
+     universal enough that the gradient is an honest fallback. */
+  vec2 wq = fp * WS + vec2(t * 0.011, -t * 0.008);
+  vec2 q  = fp * HS + WARP * curl(wq) + wpush + vec2(-t * 0.016, t * 0.009);
 
   vec2 gSoft;
   vec3 H  = fbmD(q, gSoft);
-  float h = NAMP * H.x + bump + rip + TILT * dot(p, TDIR);
+  float h = OAMP * H.x + bump + rip + OTILT * dot(fp, TDIR);
+#endif
 
   /* ponytail: the shading gradient is taken in WARPED space and is not
      chain-ruled through the warp's Jacobian, which would need two more vnoiseD
@@ -415,7 +585,18 @@ void main() {
      the local surface — a flat wash across the picture rather than modelling.
      What should catch the light is the deviation from the plane, which is the
      noise. The tilt still governs where the contours and the silhouette go. */
-  vec2 dh = (gSoft * NAMP * HS) + bumpG + ripG;
+#if OCEAN
+  /* The slopes came out of the spectrum as i*k*h, so they are exact derivatives
+     of the surface rather than differences of it, and chain-ruling them through
+     the sampling scale is the same step fbmD's gradient needed. They are also
+     inherently the SOFT gradient the shading wants: the patch is band-limited at
+     N/2, so the sandblasted look that came from lighting a surface with its
+     finest octave cannot happen here — the fine detail lives in the contour
+     lines, which is where it belongs. */
+  vec2 dh = (S.yz * OAMP * uOScale) + bumpG + ripG;
+#else
+  vec2 dh = (gSoft * OAMP * HS) + bumpG + ripG;
+#endif
 
   /* ---- composition: where the landmass recedes ----
      The type is not fought back with a scrim, it is given somewhere to sit. Sea
@@ -456,15 +637,20 @@ void main() {
      bare sky gradient the CSS fallback paints. The landmass therefore surfaces
      highest-first, flooding in from the upper right along the tilt, which is
      the composition assembling itself toward the copy. */
-  float sea = SEA
-            + 1.15 * (1.0 - uForm)
-            + 1.15 * uSink
-            + 0.52 * quiet
-            + 0.08 * (1.0 - smoothstep(-0.05, 0.34, uvy))
-            + 0.35 * (1.0 - smoothstep(1.04, 0.72, abs(nx)));
+  float seaShape = 0.52 * quiet
+                 + 0.08 * (1.0 - smoothstep(-0.05, 0.34, uvy))
+                 + 0.35 * (1.0 - smoothstep(1.04, 0.72, abs(nx)));
+#if VARIANT == 3
+  /* A perspective ocean has no shoreline, so the guards cannot work by raising
+     sea level: a raised patch over the copy column would punch a hole of sky
+     through the middle of the water. They fall through to damping the marks
+     instead, which the line and specular terms below already do for the nav. */
+  seaShape = 0.0;
+#endif
+  float sea = OSEA + FORMH * (1.0 - uForm) + FORMH * uSink + seaShape;
 
   float ee   = max(fwidth(h), 1e-5);
-  float mass = smoothstep(-ee, ee, h - sea);
+  float mass = smoothstep(-ee, ee, h - sea) * (1.0 - voidy);
 
   /* ---- contours ----
      See the header for why the saturation term is correct rather than a bug. The
@@ -481,6 +667,17 @@ void main() {
   float formLine = smoothstep(0.10, 0.90, uForm);
   float line = 1.0 - smoothstep(0.0, aa * 1.2 + 0.008, f - LW * formLine);
   line = max(line, smoothstep(0.20, 0.58, aa) * formLine);
+#if OCEAN && VARIANT != 2
+  /* Foam feeds the SATURATION term rather than being painted over the top, and
+     this is the mapping the whole port was worth doing for. The cream wash along
+     the crests is what happens when a contour band falls below a pixel and the
+     anti-aliasing can no longer resolve it — it is a slope artefact, and it has
+     always been the most recognisable thing about this field. The Jacobian marks
+     where the surface folds onto itself, which is where the slope goes vertical.
+     They are the same places. So the foam does not add a new mark, it deepens
+     one that was already trying to be there for the right physical reason. */
+  line = max(line, smoothstep(0.30, 0.95, foam) * formLine);
+#endif
 
   /* The guard is the last word on type contrast, and it works on the LINES
      rather than on the colour. Washing the whole frame toward the ground would
@@ -559,6 +756,13 @@ void main() {
   // The crest highlight rides the lines, because that is where it does in the
   // reference — the merged bands and the specular peak are the same ridge.
   surf += HILITE * spec * (0.22 + 0.85 * line);
+#if OCEAN && VARIANT == 2
+  /* Tide draws the foam as its own whitewater instead of folding it into the
+     lines. More literally an ocean, and it reads at a glance — but it is opaque
+     paint over a moving field, so it is the term most likely to flatten the
+     picture. That is the trade this variant exists to show. */
+  surf = mix(surf, HILITE, smoothstep(0.25, 0.90, foam) * 0.85 * formLine);
+#endif
 
   /* The cliff face. Without it the silhouette is a paper cutout: the surface
      runs right up to the cut at full brightness and stops. A darker band just
@@ -567,6 +771,12 @@ void main() {
   surf = mix(surf, mix(surf * 0.42, DEEP, 0.35), cliff * 0.85);
 
   vec3 sky = mix(SKY_LO, SKY_HI, smoothstep(-0.12, 1.05, uvy));
+#if VARIANT == 3
+  /* Everything past the fog distance is sky, which is the only thing standing
+     between this and a solid band of unresolvable contour at the horizon. It is
+     also what stops the pixel cost of that band from mattering. */
+  surf = mix(surf, sky, fog);
+#endif
   vec3 col = mix(sky, surf, mass);
 
   col = tone(col);
@@ -582,9 +792,42 @@ void main() {
   fragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`;
 
-const canvas = document.querySelector<HTMLCanvasElement>('canvas.hero__slot');
-const hero = document.querySelector<HTMLElement>('.hero');
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** The variant the page ships. The lab route overrides it per mount. */
+export const DEFAULT_VARIANT = 1;
+
+/* Per-variant sampling. These are the knobs that decide how much ocean fits in
+   the frame, and they are separate from oceanfft's spectrum knobs on purpose:
+   those describe the SEA, these describe the shot of it.
+
+   scale  patch uv per field unit, and the control that really decides how busy
+          the field looks: undulations across the frame is scale x (patch /
+          characteristic length), so 0.20 puts about four across the hero. Also
+          well under 1, so the patch never repeats visibly in a 16:9 frame; the
+          horizon variant sees far more of the plane, so it has to tile and
+          relies on distance to hide it.
+   warp   choppy displacement, multiplied by the ocean's own 1/sigma so it stays
+          put when the wind speed or patch size is retuned. It has to stay a
+          small fraction of a WAVELENGTH in uv, not a small number in the
+          abstract — at 0.03 the displacement was around half a wavelength and
+          the lookup folded over itself, which draws as torn edges.
+   drift  a lateral current on top of the dispersion. Small: the surface already
+          moves on its own, this only stops the patch feeling pinned to the frame.
+   time   the reference's 0.6 time scale, per variant. */
+const OCEAN_TUNE: Record<number, { scale: number; warp: number; drift: number; time: number }> = {
+  1: { scale: 0.200, warp: 0.018, drift: 0.0020, time: 0.60 },
+  2: { scale: 0.280, warp: 0.014, drift: 0.0030, time: 0.75 },
+  3: { scale: 0.120, warp: 0.009, drift: 0.0000, time: 0.55 },
+};
+
+/* #version has to be the first line of the source, so the defines that select
+   the variant and the height source are spliced in ahead of the body here. */
+const buildFrag = (variant: number, ocean: boolean): string =>
+  `#version 300 es
+#define VARIANT ${variant}
+#define OCEAN ${ocean ? 1 : 0}
+${FRAG_BODY}`;
 
 /* The hero's scroll-out progress, fed by reveal.ts from the SAME ScrollTrigger
    that scrubs the parallax — this module never adds a scroll listener of its
@@ -609,9 +852,7 @@ function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLSh
   return sh;
 }
 
-function init(): void {
-  if (!canvas || !hero) return;
-
+function init(canvas: HTMLCanvasElement, hero: HTMLElement, variant: number): (() => void) | undefined {
   const gl = canvas.getContext('webgl2', {
     alpha: false,
     antialias: false, // the shader filters its own edges; MSAA would only cost fill rate
@@ -627,8 +868,24 @@ function init(): void {
   });
   if (!gl) return; // CSS gradient on .hero carries it
 
+  // Some drivers refuse a draw with no VAO bound, even with zero attributes —
+  // and the ocean pipeline below draws, so this has to come first.
+  gl.bindVertexArray(gl.createVertexArray());
+
+  /* The height field comes from here now. createOcean returns null when the GPU
+     cannot render to float, which is the cue to compile the fbm fallback
+     instead — so it has to be built BEFORE the program that samples it. */
+  // The simulation needs the framing's warp scale to make its Jacobian
+  // dimensionless, so the tune is read before the ocean is built.
+  const tune = OCEAN_TUNE[variant] ?? OCEAN_TUNE[1];
+  const ocean = createOcean(gl, { warp: tune.warp });
+  /* The horizon variant is a perspective view OF the ocean; with no ocean there
+     is nothing for the camera to look at, so the fallback is always the plan
+     view regardless of what was asked for. */
+  const v = ocean ? variant : 1;
+
   const vs = compile(gl, gl.VERTEX_SHADER, VERT);
-  const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG);
+  const fs = compile(gl, gl.FRAGMENT_SHADER, buildFrag(v, !!ocean));
   if (!vs || !fs) return;
 
   const prog = gl.createProgram();
@@ -641,8 +898,6 @@ function init(): void {
     return;
   }
   gl.useProgram(prog);
-  // Some drivers refuse a draw with no VAO bound, even with zero attributes.
-  gl.bindVertexArray(gl.createVertexArray());
 
   const uRes = gl.getUniformLocation(prog, 'uRes');
   const uTime = gl.getUniformLocation(prog, 'uTime');
@@ -662,6 +917,12 @@ function init(): void {
   const uContentHW = gl.getUniformLocation(prog, 'uContentHW');
   const uQuietTop = gl.getUniformLocation(prog, 'uQuietTop');
   const uNavY = gl.getUniformLocation(prog, 'uNavY');
+  const uDisp = gl.getUniformLocation(prog, 'uDisp');
+  const uRaw = gl.getUniformLocation(prog, 'uRaw');
+  const uOScale = gl.getUniformLocation(prog, 'uOScale');
+  const uOWarp = gl.getUniformLocation(prog, 'uOWarp');
+  const uODrift = gl.getUniformLocation(prog, 'uODrift');
+  const uON = gl.getUniformLocation(prog, 'uON');
   const grid = hero.querySelector<HTMLElement>('.hero__grid');
   const copyCol = grid?.firstElementChild as HTMLElement | null;
   const statCard = hero.querySelector<HTMLElement>('.statcard');
@@ -778,14 +1039,18 @@ function init(): void {
   const signal = ac.signal;
   const observers: Array<{ disconnect(): void }> = [];
   let stopTicker: () => void = () => {};
+  const teardown = (): void => {
+    stopTicker();
+    for (const o of observers) o.disconnect();
+    ac.abort();
+    ocean?.dispose();
+    canvas.classList.remove('is-live'); // the CSS gradient carries it
+  };
   canvas.addEventListener(
     'webglcontextlost',
     (e) => {
       e.preventDefault();
-      stopTicker();
-      for (const o of observers) o.disconnect();
-      ac.abort();
-      canvas!.classList.remove('is-live'); // the CSS gradient carries it
+      teardown();
     },
     { signal },
   );
@@ -866,6 +1131,26 @@ function init(): void {
 
   function draw(dt: number): void {
     resize();
+    /* The simulation runs first and leaves its own program bound, its own
+       viewport set and its FBO detached — step() restores the framebuffer and
+       viewport, but the program is ours to take back. Cheaper than having
+       oceanfft save and restore state it cannot know the shape of. */
+    if (ocean) {
+      ocean.step(time * tune.time);
+      gl!.useProgram(prog!);
+      gl!.activeTexture(gl!.TEXTURE0);
+      gl!.bindTexture(gl!.TEXTURE_2D, ocean.texDisp);
+      gl!.activeTexture(gl!.TEXTURE1);
+      gl!.bindTexture(gl!.TEXTURE_2D, ocean.texRaw);
+      gl!.uniform1i(uDisp, 0);
+      gl!.uniform1i(uRaw, 1);
+      gl!.uniform1f(uOScale, tune.scale);
+      // Scaled by the ocean's own 1/sigma, so retuning the wind or the patch
+      // size does not silently rescale the warp along with the height.
+      gl!.uniform1f(uOWarp, ocean.norm * tune.warp);
+      gl!.uniform2f(uODrift, time * tune.drift, time * tune.drift * 0.4);
+      gl!.uniform1f(uON, ocean.n);
+    }
     // Lerp rather than snap — the same trailing feel as the magnetic buttons.
     const k = Math.min(1, dt * 0.006);
     eased.x += (target.x - eased.x) * k;
@@ -960,7 +1245,7 @@ function init(): void {
     const mo = new MutationObserver(still);
     mo.observe(root, { attributeFilter: ['data-theme'] });
     observers.push(ro, mo);
-    return;
+    return teardown;
   }
 
   /* A toggle while the ticker runs starts the sweep from the toggle button; a
@@ -1088,15 +1373,41 @@ function init(): void {
   draw(0);
   canvas.classList.add('is-live');
   run(true);
+  return teardown;
 }
 
-/* A restored context re-runs init() from scratch. The lost-context handler
-   inside init() stripped the old instance's listeners, observers and ticker,
-   so this is a clean second boot, not a doubling. */
-canvas?.addEventListener('webglcontextrestored', () => init());
+/* ---- mounting ----
+   init() is handed its elements rather than reading the document, which is what
+   lets the variant lab mount the REAL renderer instead of a look-alike — so the
+   variant chosen there is the variant that ships, guards and contrast included.
+   Production mounts exactly one, on the page's single hero. */
+export function mountHeroField(
+  canvas: HTMLCanvasElement,
+  hero: HTMLElement,
+  variant: number = DEFAULT_VARIANT,
+): () => void {
+  let destroy = init(canvas, hero, variant);
+  /* A restored context re-runs init() from scratch. The lost-context handler
+     inside init() stripped the old instance's listeners, observers, ticker and
+     GPU objects, so this is a clean second boot, not a doubling. */
+  const onRestore = (): void => {
+    destroy = init(canvas, hero, variant);
+  };
+  canvas.addEventListener('webglcontextrestored', onRestore);
+  return () => {
+    canvas.removeEventListener('webglcontextrestored', onRestore);
+    destroy?.();
+  };
+}
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
-} else {
-  init();
+/* No auto-mount on import any more, and that matters: reveal.ts imports
+   setHeroScroll from this module, so a side effect here would claim the hero
+   canvas the moment reveal.ts loaded — regardless of whether the WebGPU ocean
+   had already taken it. heroocean.ts owns the decision and calls this. */
+export function mountDefaultHeroField(): (() => void) | undefined {
+  const c = document.querySelector<HTMLCanvasElement>('canvas.hero__slot');
+  const h = document.querySelector<HTMLElement>('.hero');
+  if (!c || !h || c.dataset.heroMounted !== undefined) return undefined;
+  c.dataset.heroMounted = 'webgl2';
+  return mountHeroField(c, h);
 }

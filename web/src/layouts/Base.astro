@@ -90,10 +90,11 @@ const ogImage = new URL('/assets/og.jpg', Astro.site).href;
         window.requestIdleCallback?.bind(window) ?? ((cb) => setTimeout(cb, 1));
 
       idle(() => {
-        // herofield first: it paints the hero backdrop, so it is the one thing
-        // here the visitor can actually see waiting for. It fades in over the
-        // CSS gradient, so arriving late costs nothing but a softer entrance.
-        import('../scripts/herofield');
+        // The hero backdrop first: it is the one thing here the visitor can
+        // actually see waiting for. It fades in over the CSS gradient, so
+        // arriving late costs nothing but a softer entrance. heroocean picks
+        // between the WebGPU ocean and the WebGL2 field and imports only one.
+        import('../scripts/heroocean');
         import('../scripts/scroll');
         import('../scripts/statcard');
         import('../scripts/pointer');
