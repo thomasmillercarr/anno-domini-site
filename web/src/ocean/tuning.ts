@@ -16,6 +16,31 @@ export const OCEAN_TUNING = {
     foamThreshold: 0,
   },
   particles: {
+    /* ADAPTED. The example draws one particle per simulation texel, hard-wired
+       as `instances: resolution * resolution` — 262,144 of them at 512². That is
+       1.57M triangles a frame and it measured 2.6ms, which does not shrink with
+       the screen: it was the same cost on a phone as on a 4K panel, and after
+       the simulation and bloom were dealt with it became the largest single term
+       in the frame.
+
+       The stride decouples particle count from simulation fidelity: the water is
+       still simulated at 512², but only every Nth texel gets a particle. 2 means
+       a quarter as many. pointSize is scaled by the stride to compensate, so the
+       total area covered — and therefore the brightness of the water — stays put
+       rather than thinning out; the points are simply larger and fewer.
+
+       It is NOT free, and the split below is why. At a desktop's device pixel
+       ratio a stride of 2 puts roughly one particle every 21 screen pixels, and
+       the water stops reading as a continuous mist: you see discrete dots and
+       grid moiré, which is the exact quality this hero was chosen for. On a
+       phone the same stride lands about one particle every 13 pixels, and those
+       pixels are around a third the physical size — so the structure that is
+       obvious on a monitor is invisible in the hand, while the frame budget is
+       far tighter. Full density where it can be seen, stride where it cannot.
+
+       Set both to 1 to restore the example's exact particle count. */
+    particleStride: 1,
+    particleStrideCoarse: 2,
     pointSize: 0.75,
     fadeNear: 60,
     fadeFar: 250,
@@ -53,6 +78,20 @@ export const OCEAN_TUNING = {
     radius: 0.46,
     levels: 5,
     kernelRadii: [6, 10, 14, 18, 22] as const,
+    /* ADAPTED. The pyramid starts at half the render buffer and every level
+       halves from there, so the whole chain's cost scales with the buffer —
+       measured at 1.31ms per megapixel, which made bloom the largest single term
+       on any large display (6.82ms of a 13.3ms frame at 1920x1080 @1.6x) and put
+       a 4K panel over budget on bloom alone.
+
+       Capping the BASE width decouples it: above this the pyramid stops growing
+       and bloom becomes near-constant instead of linear in pixels. Nothing is
+       lost that bloom cares about — it is a blur, and the kernel radii are in
+       texels, so a smaller base simply spreads the glow slightly wider relative
+       to the frame. 960 leaves every buffer at or under 1920 wide untouched
+       (they were already clamped by the 0.5 factor), so this only ever bites on
+       the displays that needed it. */
+    baseMaxWidth: 960,
   },
 } as const;
 

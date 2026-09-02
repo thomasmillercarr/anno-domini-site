@@ -17,7 +17,7 @@
 
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { setHeroScroll } from './herofield';
+import { setHeroScroll } from './heroscroll';
 
 const motionOK =
   document.documentElement.classList.contains('motion') &&

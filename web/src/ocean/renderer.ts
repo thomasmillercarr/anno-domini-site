@@ -17,6 +17,14 @@
  *   3. The camera is framed per hero, not fixed, because the site's hero is a
  *      full-viewport block whose aspect ratio varies far more than the example
  *      gallery's canvas. See camera.ts.
+ *   4. The simulation runs at SIM_HZ, not once per drawn frame. Measured, the
+ *      spectrum + 18 IFFT stages + normal/foam cost 2.7ms of every frame and
+ *      that cost is FIXED — it is a 512x512 job whether the hero is on a phone
+ *      or a 4K panel, so at phone resolution it was 41% of the frame. The
+ *      surface evolves at timeScale 0.6 x spectrumTimeScale 0.5, which is slow
+ *      enough that halving the update rate is not perceptible. The particles
+ *      keep reading the last displacement and normal/foam textures, so nothing
+ *      downstream notices a frame where the simulation did not advance.
  *
  * Resource cleanup is deliberately untouched: dispose() is idempotent, the resize
  * generation counter drops stale graphs, destroyTargets tears down in reverse
@@ -67,6 +75,11 @@ interface RendererOptions {
   readonly onFirstFrame?: () => void;
 }
 
+/* Adaptation 4: the water advances at this rate, not once per drawn frame. 30Hz
+   against a 60Hz display halves the simulation's share of the frame; the surface
+   moves slowly enough that the difference is not visible. */
+const SIM_INTERVAL = 1 / 30;
+
 const SIM_FORMAT: GPUTextureFormat = "rgba32float";
 const HDR_FORMAT: GPUTextureFormat = "rgba16float";
 const TRANSPARENT = [0, 0, 0, 0] as const;
@@ -82,6 +95,7 @@ export function createRenderer({ canvas, onFirstFrame }: RendererOptions) {
   let time: ReturnType<typeof clock> | undefined;
   let elapsed = 0;
   let announced = false;
+  let simAccum = Infinity; // force a simulation step on the very first frame
 
   function dispose(): void {
     if (disposed) return;
@@ -164,12 +178,19 @@ export function createRenderer({ canvas, onFirstFrame }: RendererOptions) {
   function step(deltaSeconds: number): void {
     if (disposed || !gpu || !graph || !output || !time) return;
     elapsed += deltaSeconds;
+    /* setDynamics takes an ABSOLUTE time, not a delta, so a skipped step costs
+       the ocean nothing — the next one lands it exactly where the wall clock
+       says it should be. The surface jumps forward by two frames' worth rather
+       than drifting behind. */
+    simAccum += deltaSeconds;
+    const simulate = simAccum >= SIM_INTERVAL;
+    if (simulate) simAccum = 0;
     try {
       time.advance(deltaSeconds);
       frame(gpu, (currentFrame) => {
         if (disposed || !graph || !output) return;
-        setDynamics(graph, elapsed * OCEAN_TUNING.simulation.timeScale);
-        renderGraph(currentFrame, graph, output as Output);
+        if (simulate) setDynamics(graph, elapsed * OCEAN_TUNING.simulation.timeScale);
+        renderGraph(currentFrame, graph, output as Output, simulate);
       });
     } catch (error) {
       fail(error);
@@ -314,10 +335,12 @@ function buildGraph(
       u_displacement: displacement,
     }
   );
+  const stride = particleStride();
+  const particleGrid = Math.max(1, Math.floor(resolution / stride));
   const particles = draw(gpu, {
     shader: particlesWgsl,
     vertices: 6,
-    instances: resolution * resolution,
+    instances: particleGrid * particleGrid,
     blend: {
       color: { src: "src-alpha", dst: "one" },
       alpha: { src: "one", dst: "one" },
@@ -479,9 +502,24 @@ function setDynamics(graph: OceanGraph, timeSeconds: number): void {
   });
 }
 
+/**
+ * Coarse pointer means a phone or tablet: the tightest frame budget and the
+ * highest physical pixel density, which is the combination that makes trading
+ * particle count for frame time invisible. See the note in tuning.ts.
+ */
+function particleStride(): number {
+  const coarse =
+    typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+  const value = coarse
+    ? OCEAN_TUNING.particles.particleStrideCoarse
+    : OCEAN_TUNING.particles.particleStride;
+  return Math.max(1, Math.floor(value));
+}
+
 function setParticleConstants(particles: Draw, output: Output): void {
   const camera = oceanCamera(output.size);
   const tuning = OCEAN_TUNING;
+  const stride = particleStride();
   particles.set({
     u: {
       view: camera.view,
@@ -490,8 +528,10 @@ function setParticleConstants(particles: Draw, output: Output): void {
       world: [
         tuning.simulation.worldSize,
         tuning.simulation.displacementScale,
-        tuning.particles.pointSize,
-        0,
+        // Scaled by the stride so that a quarter as many points still cover the
+        // same area: coverage goes as count x size², so size must go as stride.
+        tuning.particles.pointSize * stride,
+        stride,
       ],
       fade: [
         tuning.particles.fadeNear,
@@ -516,10 +556,16 @@ export function renderAt(
   frame(gpu, (currentFrame) => renderGraph(currentFrame, graph, output));
 }
 
+/**
+ * @param simulate advance the water this frame. False replays the last
+ * displacement and normal/foam textures — see adaptation 4 in the header. The
+ * initial spectrum is seeded regardless, because there is nothing to replay yet.
+ */
 export function renderGraph(
   currentFrame: Frame,
   graph: OceanGraph,
-  output: Output
+  output: Output,
+  simulate = true
 ): void {
   const pass = (target: Output, drawable: Draw | Effect) =>
     currentFrame.pass({ target, clear: TRANSPARENT }, (encoder) =>
@@ -530,11 +576,13 @@ export function renderGraph(
     pass(graph.simulation.h0, graph.effects.initialSpectrum);
     graph.needsInitialSpectrum = false;
   }
-  pass(graph.simulation.spectrum, graph.effects.evolveSpectrum);
-  for (const stage of graph.ifft) {
-    pass(stage.output, stage.effect);
+  if (simulate) {
+    pass(graph.simulation.spectrum, graph.effects.evolveSpectrum);
+    for (const stage of graph.ifft) {
+      pass(stage.output, stage.effect);
+    }
+    pass(graph.simulation.normalFoam, graph.effects.normals);
   }
-  pass(graph.simulation.normalFoam, graph.effects.normals);
   pass(graph.scene, graph.particles);
   pass(graph.bloom.bright, graph.effects.bright);
   for (const level of graph.bloom.levels) {
@@ -548,8 +596,12 @@ export function renderGraph(
 export function bloomSizes(
   size: readonly [number, number]
 ): [number, number][] {
-  let width = Math.max(1, Math.round(size[0] / 2));
-  let height = Math.max(1, Math.round(size[1] / 2));
+  /* Half the buffer, or whatever keeps the base under baseMaxWidth — whichever
+     is smaller. One scale for both axes, so the pyramid keeps the frame's aspect
+     ratio and the blur stays circular. See the note in tuning.ts. */
+  const scale = Math.min(0.5, OCEAN_TUNING.bloom.baseMaxWidth / Math.max(1, size[0]));
+  let width = Math.max(1, Math.round(size[0] * scale));
+  let height = Math.max(1, Math.round(size[1] * scale));
   return Array.from({ length: OCEAN_TUNING.bloom.levels }, () => {
     const level: [number, number] = [width, height];
     width = Math.max(1, Math.round(width / 2));

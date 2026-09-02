@@ -37,11 +37,16 @@ fn quadCorner(vertexIndex: u32) -> vec2f {
   @builtin(vertex_index) vertexIndex: u32,
   @builtin(instance_index) instanceIndex: u32,
 ) -> VertexOut {
+  // The simulation is resolution², but only every `stride`th texel carries a
+  // particle, so the instance grid is resolution/stride on a side. particleRef
+  // stays normalised over the same world patch either way.
   let resolution = max(1u, u32(u.viewport.w));
-  let i = instanceIndex % resolution;
-  let j = instanceIndex / resolution;
-  let particleRef = vec2f(f32(i), f32(j)) / f32(resolution);
-  let texCoord = vec2u(i, j);
+  let stride = max(1u, u32(u.world.w));
+  let gridRes = max(1u, resolution / stride);
+  let i = instanceIndex % gridRes;
+  let j = instanceIndex / gridRes;
+  let particleRef = vec2f(f32(i), f32(j)) / f32(gridRes);
+  let texCoord = vec2u(i * stride, j * stride);
 
   let disp = textureLoad(u_displacement, texCoord, 0).xyz * u.world.y;
   let nf = textureLoad(u_normalFoam, texCoord, 0);

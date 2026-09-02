@@ -118,6 +118,7 @@
 import { gsap } from 'gsap';
 import { rafThrottle } from './pointer';
 import { createOcean, type Ocean } from './oceanfft';
+import { getHeroScroll } from './heroscroll';
 
 const VERT = `#version 300 es
 void main() {
@@ -829,15 +830,12 @@ const buildFrag = (variant: number, ocean: boolean): string =>
 #define OCEAN ${ocean ? 1 : 0}
 ${FRAG_BODY}`;
 
-/* The hero's scroll-out progress, fed by reveal.ts from the SAME ScrollTrigger
-   that scrubs the parallax — this module never adds a scroll listener of its
-   own. Module-level so the export needs no handle on init()'s closure; the
-   draw loop reads it every frame. Under reduced motion reveal.ts never calls
-   it and the sea stays put. */
-let scrollP = 0;
-export function setHeroScroll(p: number): void {
-  scrollP = Math.min(1, Math.max(0, p));
-}
+/* The scroll-out progress now lives in heroscroll.ts, and this module only
+   reads it. It moved because reveal.ts imported the setter from here, which
+   dragged this whole file plus oceanfft.ts into the bundle for every visitor —
+   including the ones running the WebGPU ocean, who never mount this at all.
+   reveal.ts still feeds it from the SAME ScrollTrigger that scrubs the
+   parallax, so there is still no scroll listener anywhere in here. */
 
 function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader | null {
   const sh = gl.createShader(type);
@@ -1162,7 +1160,7 @@ function init(canvas: HTMLCanvasElement, hero: HTMLElement, variant: number): ((
     // The submergence trails the scrub slightly so the sea has weight; the
     // 1.35 power at upload holds the landmass through the first stretch of
     // scroll and lets the sink accelerate once leaving is clearly the intent.
-    target.sink = scrollP;
+    target.sink = getHeroScroll();
     eased.sink += (target.sink - eased.sink) * Math.min(1, dt * 0.012);
     // The wake decays on its own, so a cursor that stops leaves a trail that
     // settles rather than a displacement that sticks.
@@ -1401,9 +1399,10 @@ export function mountHeroField(
 }
 
 /* No auto-mount on import any more, and that matters: reveal.ts imports
-   setHeroScroll from this module, so a side effect here would claim the hero
-   canvas the moment reveal.ts loaded — regardless of whether the WebGPU ocean
-   had already taken it. heroocean.ts owns the decision and calls this. */
+   the hero's scroll progress, and a side effect here would claim the hero
+   canvas the moment anything imported this file — regardless of whether the
+   WebGPU ocean had already taken it. heroocean.ts owns the decision and calls
+   this. */
 export function mountDefaultHeroField(): (() => void) | undefined {
   const c = document.querySelector<HTMLCanvasElement>('canvas.hero__slot');
   const h = document.querySelector<HTMLElement>('.hero');
