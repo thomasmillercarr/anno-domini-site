@@ -26,9 +26,14 @@ Real build system — run everything from inside [`web/`](web/):
 - `npm run preview` — preview the built output
 
 Stack: **Astro 5**, `output: 'static'` (see [web/astro.config.mjs](web/astro.config.mjs)), `site:
-'https://os.partners'`. Deploys to **Vercel** (auto-detected, no adapter needed while output stays
-static). Runtime deps: `gsap` (animation) and `lenis` (smooth scroll). There is no test suite or lint
-config.
+'https://annodom.com'`. Deploys to **Vercel** from `main` (auto-detected, no adapter needed while
+output stays static). Runtime deps: `gsap` (animation), `lenis` (smooth scroll) and `vgpu` (the WebGPU
+hero — see below); dev deps `@astrojs/sitemap` and `@webgpu/types`. `astro.config.mjs` also registers
+`@vgpu/wgsl/loader-vite`, without which the hero's `.wgsl` modules do not resolve.
+
+Checks, such as they are: `npx tsc --noEmit` and `node test-contrast.mjs` (WCAG AA on the light-theme
+token pairs). There is no test suite or lint config. `src/scripts/pointer.ts` has two long-standing
+`TS2352` cast complaints that predate all current work — they are not a regression.
 
 ## Project structure (`web/src/`)
 
@@ -54,9 +59,14 @@ config.
   `IntersectionObserver` sentinels rather than a scroll listener), `scroll.ts` (Lenis smooth scroll and
   smooth in-page anchors; exposes `window.__lenis` for scroll-lock), `statcard.ts` (hero stat counter),
   `pointer.ts` (magnetic cursor / parallax; also exports the shared `rafThrottle`), `reveal.ts`
-  (scroll-linked entrance choreography, gated on `html.motion`), `herofield.ts` (the generated hero
-  backdrop — see below), `booker.ts` (the GSAP-Flip contact panel + Web3Forms submit). See the
-  motion-layer notes for the `html.motion` gating pattern.
+  (scroll-linked entrance choreography, gated on `html.motion`), `booker.ts` (the GSAP-Flip contact
+  panel + Web3Forms submit). See the motion-layer notes for the `html.motion` gating pattern.
+- The hero backdrop, which is its own subsystem — see the section below:
+  `heroocean.ts` (picks the renderer and owns the ticker/visibility gating; the only one `Base.astro`
+  imports), `heroscroll.ts` (three lines of scroll state, deliberately separate), `herofield.ts` (the
+  WebGL2 fallback) and `oceanfft.ts` (its FFT height source).
+- [`ocean/`](web/src/ocean/) — the vgpu fft-ocean example, pulled rather than reimplemented. Treat it
+  as vendored: keep it close to upstream and put site-specific behaviour in `heroocean.ts` instead.
 - `components/` — one `.astro` per section, each importing `site` for its copy.
 
 ## Content lives in `site.ts`
@@ -104,254 +114,195 @@ palette, so theming holds:
   centering). Breakpoints at 1080px, 820px, 540px.
 - **Hairlines**: `--hair` / `--hair-soft` at `--hair-w` (1px).
 
-## The hero backdrop is generated, not photographed
+## The hero backdrop is the vgpu "Particles ocean"
 
-The hero is **not an image**. `.hero__slot` is a `<canvas>` painted by
-[`scripts/herofield.ts`](web/src/scripts/herofield.ts) — **one fullscreen quad, one program** — at the
-display's own resolution. It replaced a 2675×1506 WebP that visibly blurred on any display wider than
-its own pixel count. There is no hero image, no `site.hero.image`, and no hero preload in
-`Base.astro` — do not reintroduce them.
+The hero is **not an image and not a fragment shader**. `.hero__slot` is a `<canvas>` running the
+[vgpu fft-ocean example](https://vgpu.sh/examples/fft-ocean) on **WebGPU**: a 512² Phillips spectrum
+evolved by deep-water dispersion, an 18-pass Stockham inverse FFT, 262,144 instanced particles riding
+the resulting displacement, and a five-level HDR bloom chain. There is no hero image, no
+`site.hero.image`, and no hero preload in `Base.astro` — do not reintroduce them.
 
-It draws a **contoured relief landscape**: a folded, eroded landmass carved by dense cream iso-lines
-over a soft dusty ground. Coral bodies, deep red in the troughs, cream blowing out along the lit
-crests. The contour bands migrate across the surface while the folds themselves slowly reshape.
+The example's own files live in [`web/src/ocean/`](web/src/ocean/), **pulled, not reimplemented**, and
+kept as close to upstream as possible. `index.tsx` (a React wrapper) was dropped; everything else is
+the example's code.
 
-On top of the field sits a **choreographed statement layer** — five moves, all of them uniforms and
-a little ALU, zero new per-fragment noise evaluations, so the pixel budget below is untouched:
+### Re-pulling the source
 
-- **Formation** (`uForm`): the first ~2.9s after the ticker starts drain the sea to surface the
-  landmass — highest peaks first, flooding in from the upper right along the tilt — while the
-  contour lines etch in from hairlines and the specular arrives last. At `uForm = 0` the frame is
-  the bare sky gradient, which is what the CSS fallback paints, so the `is-live` fade is seamless.
-  The CSS type entrance is untouched and owns the first beat; the world assembles behind it.
-- **Submergence** (`uSink`): reveal.ts feeds the hero's scroll-out progress into the exported
-  `setHeroScroll()` from the *same* ScrollTrigger that scrubs the parallax — the sea rises and
-  swallows the landmass as the visitor leaves, and gives it back on the way up. No scroll listener
-  in herofield.ts, no second trigger.
-- **Pressure ripples** (`uRip[3]`, gated by `uRipOn`): a mouse/pen press — or on touch a real tap,
-  pointerup within 350ms/12px so scroll flicks never fire — drops a travelling gaussian ring into
-  the *height*, with its analytic gradient added to the shading normal: the contours and lighting
-  genuinely wave outward, it is not a colour overlay. Three pooled slots, oldest recycled; the
-  whole block is uniform-gated so idle frames skip it. This is the one field interaction phones get.
-- **Theme sweep** (`uDark`/`uDarkTo` + `uSweep`): the theme change is a radial front expanding from
-  the toggle button over ~0.82s — night crosses the landscape — replacing the old whole-frame
-  temporal lerp. A toggle while the ticker is stopped (hero off-screen, tab hidden) snaps instead,
-  so the field is never caught mid-front when it scrolls back in. Idle frames have
-  `uDarkTo == uDark` and the mix collapses to the settled value.
-- **Living light** (`uLdir`/`uLhalf`): the light direction orbits ±4° over ~26s so crest highlights
-  crawl along the ridges at idle. Both vectors are rotated by the same angle on the JS side, and
-  `time = 0` reproduces the old constants exactly — which is what the reduced-motion frame renders.
+`npx vgpu examples pull fft-ocean` **fails on Windows** with
+`VGPU-EXAMPLES-FILESYSTEM: Safe destination storage is unsupported on win32`. The same files are
+published as a markdown manifest at `https://vgpu.sh/examples/fft-ocean/source.md` — one heading per
+file with a fenced block under it. Fetch with curl and split on that.
 
-Pointer input (bulge, wake, ripples, sweep origin) is normalised against the **canvas box, not the
-hero's** — the canvas is the shader's coordinate frame (it bleeds 124% for the parallax), and its
-rect includes the parallax transform, which is the visual truth a cursor lines up against.
+`.wgsl` files in this example **import each other like modules**, so `astro.config.mjs` registers
+`@vgpu/wgsl/loader-vite`. Without it Vite treats them as opaque assets and hands the renderer a URL
+instead of a shader. Types come from `@vgpu/wgsl/wgsl-types` plus `@webgpu/types`, wired in
+[`web/src/ocean/env.d.ts`](web/src/ocean/env.d.ts) and `tsconfig.json`.
 
-Things to know before editing it:
+### The four adaptations, all in `renderer.ts`
 
-- **The ratio of `TILT` to `NAMP` is the whole look, and it is the first thing to preserve.** An fbm
-  has no preferred direction, so its iso-lines close into rings around every local extremum: contour a
-  plain fbm and you get concentric whorls and little eyes, which is marbled paper. A plane has
-  perfectly parallel iso-lines and no character at all. What the reference actually is, is a **plane,
-  warped** — long lines running roughly parallel across the frame, folded into sweeping curves,
-  closing into a lens shape only occasionally. That comes from letting the tilt dominate the height
-  about **3:1** and putting the character in the **domain warp**, which bends parallel bands without
-  creating new extrema for them to close around. Pushing `NAMP` up toward `TILT` was tried; the rings
-  come straight back.
-- **The contours are deliberately allowed to SATURATE to solid cream, and that is not aliasing.** The
-  line is drawn with `smoothstep(0, fwidth(c), …)`, so its edge softness tracks how fast the bands
-  cross the screen. Where a slope is steep enough that a band spans under a pixel, that smoothstep
-  cannot resolve anything and coverage tends to the mean — flat grey. The `max` against
-  `smoothstep(0.20, 0.58, aa)` takes it the rest of the way to solid cream. That wash along the crests
-  is the most recognisable thing about the look. Do not "fix" it by pinning the line width.
-- **Line density and tone were dialled back on request** — the field read as cluttered and the light
-  theme's cream too bright. `BANDS` 54 → **40**, `LW` 0.15 → **0.12**, `CFLOW` 0.55 → **0.40**, and
-  `CREAM_L` `#F6E7DC` → **`#EEDACA`**. The four move together and should stay that way: `LW` is in
-  band units, so widening the bands without narrowing the duty cycle fattens each line into a
-  ribbon; `CFLOW` is bands-per-second, so leaving it alone makes the drift *look* faster across
-  wider spacing; and since `aa` scales with `BANDS`, dropping the count also shrinks the saturation
-  blowouts, which is half of why the frame calmed down. Density going **down** is the safe
-  direction for both the pixel budget and the contrast figures above — denser lines want more
-  resolution, and brighter ones eat the light theme's headroom.
-- **The domain warp is divergence-free** (`v = rot90(grad psi)`), not an arbitrary noise vector. A warp
-  with sinks bunches the iso-lines into knots.
-- **The shading gradient deliberately excludes the tilt.** The tilt is a constant, so folding it into
-  the normal lights the whole frame from one fixed angle regardless of the local surface — a flat wash
-  across the picture instead of modelling. What catches the light is the deviation from the plane.
-- **Shading uses `gSoft`, the first two octaves only.** The full gradient is dominated by the finest
-  octave and lighting a surface with it looks sandblasted with no readable form. The fine detail is
-  already carried by the contour lines. Splitting it out inside the same loop costs no extra noise.
-- **The fbm gain is 0.53, not 0.5.** At 0.5 the slope is near-uniform across the frame, the contours
-  come out evenly spaced everywhere, and it reads as a survey map. The extra weight on the fine octaves
-  is what makes some stretches pack tight and blow out while others open into broad coral — and what
-  erodes the silhouette into fingers.
-- **Every octave is rotated as well as scaled.** Value noise sits on a square lattice and its features
-  align with the axes; stacking octaves on the same axes draws tall axis-aligned rectangles. Contours
-  make that unmissable, because they trace the iso-lines directly.
-- **Gradients are analytic, not finite differences.** `vnoiseD` returns value and exact derivative from
-  the same four corner hashes. Three taps of an fbm is 3× the noise for a worse answer.
-- **The composition guards are MEASURED from layout, not hard-coded**, and this is the correction that
-  matters most. `uContentHW` is the real `.hero__grid` half-width and `uQuietTop` the real top edge of
-  the copy column and the statcard, in the canvas's own coordinates. Two separate bugs came from magic
-  numbers here: a guard in *frame* coordinates protects empty margin on an ultrawide while leaving the
-  statcard on open terrain (the layout caps at `--maxw` and centres), and a fixed vertical ceiling that
-  looked right at 900px tall put the sub-label on bare terrain at 586px — measured at 4.05:1. There is
-  no constant that is correct at every viewport.
-  The measurement uses **`offsetTop`, not `getBoundingClientRect`**, because `reveal.ts` scrubs a 64px
-  y transform onto `.hero__grid`; rects include it, so a resize part-way down the page would bake in
-  the wrong ceiling. It also re-runs on `document.fonts.ready`, since the webfont landing is the one
-  reflow that changes the headline without changing the buffer size.
-- **The nav guard is MEASURED and THEME-WEIGHTED, and both halves were paid for.** The nav is pinned
-  to the top of the frame where the mass sits and has no frost until it scrolls. Raising sea level
-  there would carve the landmass off the top edge, the best part of the composition, so the guard
-  works on the marks instead — but its extent is now `uNavY`, the nav's real bottom edge read in
-  `measure()`, because the hard-coded `0.86` it replaced was the same class of bug as the other
-  magic-number guards: the nav is a fixed-height bar over a viewport-relative canvas, so at real
-  viewport heights the link glyphs sat *below* the damped strip, and a 20-second watch caught the
-  migrating copper crests taking the dark theme's links to 3.0:1. And the damp is weighted by the
-  per-fragment theme value, because the themes fail in opposite directions: dark puts near-white
-  type over the field, so it mutes the bright marks (lines 84%, specular 95% — the specular half
-  matters most, a crest blowout with the highlight on it is the brightest thing the field produces);
-  light puts near-black ink over it, and muting the lines there UNCOVERS bare coral and deep
-  troughs — measured, the ink went to 3.6:1 the moment the lines were damped — so light keeps every
-  line and lifts the troughs toward the coral mid-tone instead. Weighted by `dk`, a theme sweep
-  carries the right guard across with the front.
-- **Everything accumulates in LINEAR light**, and the palette constants are already raised to 2.2.
-  Never paste sRGB values into them. The tonemap is a highlight-only shoulder with **K = 0.80** — high
-  because this palette is high-key, and a shoulder starting at 0.55 compresses the cream lines, which
-  are the brightest thing in the frame and the whole subject. Deliberately not ACES.
-- **No bloom.** The crest glow is a specular term, not energy spreading.
-- **Two palettes, selected per-fragment by the theme front** (`uDark` is the settled value, `uDarkTo`
-  the incoming one, `uSweep` the front — see the statement layer above). The coupling is
-  one-directional: `herofield.ts` watches `data-theme` with a `MutationObserver`; `theme.ts` knows
-  nothing about the canvas. Under reduced motion the same observer calls `draw(0)` with both values
-  snapped, since there is no ticker to sweep on.
-  The dark palette's line and crest tones are **deliberately darker than the obvious rose-gold**: the
-  dark theme puts near-white type over this, and a brighter copper took the nav links to 4.50:1.
-- **`.hero`'s CSS fallback gradient must track the shader's ground**, in both themes. It is the no-WebGL
-  and lost-context path.
-- **It runs off `gsap.ticker`**, which `scroll.ts` already drives in lockstep with Lenis. Do not open a
-  second rAF loop; one clock is what keeps it feeling attached to the smooth scroll.
-- **The canvas must never set its own transform** — `reveal.ts` scrubs `yPercent` on `.hero__slot` for
-  the scroll parallax and the two would fight.
-- **Reduced motion** renders exactly one frame — a COMPLETE one, `uForm` pre-seeded to 1, never a
-  half-formed landscape — and takes `preserveDrawingBuffer`, without which that frame vanishes on
-  the next re-raster. Verified by forcing the flag, re-rastering, and reading the buffer back.
-- **A lost context tears down, a restored one re-boots.** Every listener hangs off one
-  AbortController and every observer lands in one list, so `webglcontextlost` strips the instance
-  down to the CSS gradient and `webglcontextrestored` re-runs `init()` as a clean second boot — no
-  doubled listeners, no ticker drawing into a dead context. `measure()` is called explicitly in
-  `init()` because a re-init finds the canvas already at the right buffer size, so `resize()`
-  early-returns and would leave the composition guards at their defaults.
-- **Perf: 2.094 ms/MP, so `MAX_PIXELS` is 7.9e6.** Measured with a GPU timer query at 2.01 / 3.69 /
-  5.01 MP, which came back at 2.095 / 2.094 / 2.094 — linear in fill to within 0.05%, so the budget is
-  just 16.7 / 2.094. That is **up** from the smoke-and-wiring field's 4.4e6, which is counter-intuitive
-  for a busier-looking picture: that shader spent four backward-advection samples times five routed
-  runs per fragment, and this evaluates a single height field — 6 noise evaluations (2 warp + 4 height)
-  against its eleven-plus. The contours are cheap; it was the transport that was expensive. A 1600×900
-  window on a 2× display now renders at a full 1:1 buffer where the previous field managed 78%, a 4K
-  panel at 1× lands at 98%, and a phone renders at its native 3×.
-  When measuring, the drawing buffer must be allocated **once outside the timed batch** — resizing per
-  draw put the three sizes 2× apart and destroyed the linearity the budget depends on.
-  If a future measurement forces a cut, drop the height fbm to 3 octaves **before** dropping
-  resolution: an octave costs fine grain the contour lines already carry, resolution costs the lines.
-  The `BANDS` 54 → 40 change did **not** need a re-measure: band count is a constant multiply on a
-  scalar, so the instruction stream is identical either way — it changes what the contours *look*
-  like, not what they cost. The terms that genuinely move this number are the octave counts and the
-  warp, because those are noise evaluations.
-  The frame-time ladder is the backstop and only steps **down**, on frames between 24ms and 300ms. Both
-  bounds matter: below 24ms you are marking healthy 60fps frames as slow, and above 300ms you are not
-  measuring the GPU at all — Chrome throttles occluded windows to ~1fps without ever setting
-  `document.hidden`. It also ignores the first 90 frames, since the load-time burst would do the same.
-- **Contrast, measured — and the honest headline is that a light field caps it.** Near-white on
-  near-black could reach 14.71:1 for the h1; charcoal on coral and cream cannot, because the palette's
-  mid-tones set the ceiling. Every pairing clears AA in both themes with room, but the h1 is lower than
-  the field it replaced and that is inherent to the direction, not a tuning failure.
-  Measured at 1282×586, mean-against-mean, against **tight glyph rects** (see below). This is the
-  **pre-tuning baseline** — it predates the statement layer and the `CREAM_L` dim, so for everything
-  except the statcard the live figures are the table further down, not this one. Kept because it is
-  the only measurement of the statcard and because it is where the method below was worked out:
+Everything else — the graph, the Stockham stage table, `prewarm`, the resize rebuild, `dispose`, and
+the `runCleanups` error discipline — is untouched upstream code. **Resource cleanup in particular is
+deliberately not modified**: `dispose` is idempotent, a resize generation counter drops stale graphs,
+`destroyTargets` tears down in reverse allocation order, and `runCleanups` reports the first failure
+without skipping later ones.
 
-  | | sub | h1 | h1 em | CTA | statcard | nav link |
-  |---|---|---|---|---|---|---|
-  | light | 6.38 | 7.78–10.80 | 6.31 | 15.08 | 12.64 | 5.68 |
-  | dark | 6.73 | 9.30–15.76 | 8.69 | 16.33 | 15.25 | 6.45 |
+1. **No `frameLoop`.** The page has one clock — `gsap.ticker`, which `scroll.ts` drives in lockstep
+   with Lenis — so the loop is an exported `step(dt)` and `clock.advance()` claims the frame's tick.
+   vgpu documents this as the supported way to hand it an external ticker. Do not open a second rAF
+   loop.
+2. **`onFirstFrame`**, so the canvas fades in over its CSS gradient only once there is something to
+   fade to.
+3. **Camera pitch −10 → 3** in `tuning.ts`. The example is framed for a gallery canvas with nothing on
+   top of it. At −10 the horizon sits above the canvas entirely, putting the brightest part of the
+   water — the dense far field just under the horizon — at nav height, where the nav has no frost
+   until the page scrolls. At 3 the horizon lands about a fifth down.
+4. **The simulation runs at 30Hz** (`SIM_INTERVAL`), not once per drawn frame. `setDynamics` takes an
+   absolute time, so a skipped step costs the water nothing — the next one lands it where the wall
+   clock says it should be.
 
-  **Re-measured after the statement layer and the density/tone tuning** (1440×810, buffer-sampled
-  under the glyph rects, minimum over a 20-second watch so the migrating bands are caught at their
-  worst — a stricter bar than the table above, which is typical frames):
+### The `.hero` CSS gradient is the SKY, not just a fallback
 
-  | | nav | sub | h1 | h1 em | CTA |
-  |---|---|---|---|---|---|
-  | light | 6.76 | 5.63 | 7.16 | 5.54 | 11.62 |
-  | dark | 6.46 | 4.68 | 8.05 | 8.30 | 14.63 |
+The scene target clears transparent and the particles are additive, so above the horizon and between
+the particles **the visitor is looking at `.hero`'s own gradient**. This is what makes the hero read as
+the brand rather than as a black demo — white foam over deep maroon in dark, sunlit spray over coral in
+light. It still doubles as the no-WebGPU/no-WebGL path, so the two uses have to agree.
 
-  The buffer probe deliberately excludes `.hero__veil`, whose wedge sits over the copy corner, so
-  these are conservative against what is actually rendered — the dark sub in particular gains
-  roughly a point from it. Two of these minimums exist only because of the theme-weighted `uNavY`
-  guard above; before it the same watch caught dark nav at 2.99 and (with lines damped) light nav
-  at 3.61.
+The light gradient was darkened deliberately and **not uniformly**. Near-black hero ink sits on it, so
+darkening costs type contrast — but not evenly. The bottom two thirds, where the headline, sub-label
+and CTA sit, had 14.3:1 of headroom. The top stop is where the nav links sit with no frost, and that is
+the pairing nearest the line, so it barely moves. Measured against the bare gradient, which is
+conservative — the particles are additive and lift whatever they land on:
 
-  Dimming `CREAM_L` cost the light theme a little of its headroom (sub 7.24 → 5.63, h1 8.26 → 7.16)
-  and gained the dark theme a little (sub 4.25 → 4.68), which is the expected direction: in the
-  light theme the cream lines are the *bright* backdrop that near-black ink reads against, so
-  darkening them narrows that gap. Everything still clears AA with margin, but this is the axis to
-  re-measure if the lines are ever dimmed further — light `sub` and `h1 em` are the first to fail.
-  The living light is the only term that moves the settled distribution and its swing never
-  approached AA.
+| | h1 / CTA | sub (muted) | at 24% | nav links |
+|---|---|---|---|---|
+| was | 14.34 | 12.80 | 13.12 | 5.46 |
+| now | 11.50 | 10.37 | 10.78 | 5.37 |
 
-  `test-contrast.mjs` does **not** cover any of this; it only checks token pairs, and it needs no
-  changes here because every hero override is scoped rather than applied to the global tokens.
-  The method: read the type rects and their computed colours, inject CSS making the hero type
-  transparent, screenshot several frames, measure each rect's backdrop with `sharp`. Five traps:
-  1. **Use glyph rects, not element boxes.** A `<p>` spans its column, so its right half is empty space
-     the letters never cover — measuring that blames backdrop the reader never sees. A `Range` over the
-     contents gives one tight rect per line. This moved the sub by over a point.
-  2. **Read the computed colours *before* injecting the probe CSS**, or they all come back transparent.
-  3. **Wait ~900ms after a theme switch before reading colours.** `.btn` and `.nav-link` both transition
-     `color` over 360ms, so an immediate read reports the *outgoing* theme's value and looks exactly
-     like a cascade bug. This cost a diagnostic pass.
-  4. `.hero__h1 em` and the statcard SVG carry their own colour and survive a naive `color: transparent`.
-     The frost panel and the `.btn` fill must **stay** — text genuinely sits on them.
-  5. The field moves, so a single frame is not trustworthy; and compare mean against mean, because the
-     worst-pixel column is a single hot mark behind a letter stroke and reads ~1.3:1 on every version of
-     this shader, including the ones that shipped.
+**The nav links against the top stop are the binding constraint.** Darkening the light hero further
+fails there first.
+
+### Performance — measured, and where the cost actually is
+
+Measured with vgpu's **GPU timestamp timer** per pass, on an Intel Iris Xe (gen-12lp) integrated GPU.
+Wall-clock rAF deltas are worthless in an automated browser: an occluded window is throttled to ~1fps
+without `document.hidden` ever being set, and reads ~1000ms per frame. Use a timer query.
+
+GPU ms, worst frame / mean (worst = the frame the simulation runs on):
+
+| | before | after |
+|---|---|---|
+| 1440×810 @1x | 7.08 | 7.14 / 5.77 |
+| 1440×810 @1.6x | 9.70 | 8.65 / 7.19 |
+| 1920×1080 @1.6x | 13.30 | 9.37 / 7.86 |
+| iPhone 390×844 @1.6x | 6.55 | 5.18 / 3.54 |
+| Android 412×915 @1.6x | 6.82 | 4.92 / 3.56 |
+
+**The thing to understand before optimising this again: most of the cost is FIXED and does not shrink
+with the screen.** The 512² simulation and the particle draw cost the same on a phone as on a 4K panel,
+because one is a fixed-size job and the other is geometry-bound, not fill-bound. Only bloom scaled with
+resolution. Three changes came out of that:
+
+- **Simulation at 30Hz** — halves its share, invisible at `timeScale 0.6 × spectrumTimeScale 0.5`.
+- **Bloom pyramid base capped at 960px wide** (`bloom.baseMaxWidth`) instead of always half the buffer.
+  Bloom was linear in pixels at 1.31 ms/MP and is now nearly constant; 6.82 → 2.88ms at 1920×1080@1.6x.
+  It is a blur and its kernel radii are in texels, so the only effect is a slightly wider glow. Buffers
+  at or under 1920 wide are untouched.
+- **`particleStride`, coarse pointers only.** This one is **not free**, and the split is the point. At a
+  desktop's pixel ratio a stride of 2 puts a particle every ~21 screen pixels and the water stops
+  reading as a continuous mist — discrete dots and grid moiré, which is the quality the hero was chosen
+  for. On a phone the same stride is a particle every ~13 pixels at roughly a third the physical size,
+  invisible, while the frame budget is far tighter. **Desktop keeps all 262,144; phones draw 65,536**
+  (2.69 → 0.72ms). `pointSize` scales with the stride so total coverage — and the brightness of the
+  water — is unchanged.
+
+Still on the table: `OCEAN_RESOLUTION` 512 → 256 would take the simulation from 2.7ms to ~0.6ms, but it
+quarters the grid the particles sample, so it is a look decision rather than a free one.
+
+### The fallback chain
+
+**WebGPU → the WebGL2 contour field → the CSS gradient.**
+[`scripts/heroocean.ts`](web/src/scripts/heroocean.ts) owns the decision and is the only hero renderer
+`Base.astro` imports. It checks `navigator.gpu` **and** that an adapter actually resolves — a browser
+can expose the API with no usable adapter — and dynamically imports one renderer or the other, so the
+loser is never downloaded. It also stops the ticker below the fold via an IntersectionObserver
+**without disposing the graph**, because rebuilding it costs h0, 18 pipelines and the bloom pyramid.
+
+[`scripts/herofield.ts`](web/src/scripts/herofield.ts) is that fallback: the previous hero, a
+single-pass WebGL2 contour landscape. Its height comes from
+[`scripts/oceanfft.ts`](web/src/scripts/oceanfft.ts), a WebGL2 port of the same FFT technique (Phillips
+spectrum, Stockham IFFT, Jacobian foam at 256²), which falls back again to a domain-warped value-noise
+fbm where `EXT_color_buffer_float` is missing. Two things learned building it that are easy to trip
+over again:
+
+- **GLSL's `%` is undefined for negative operands**, and half a centred frame has negative texel
+  indices. Use `mod()`. The symptom is hard axis-aligned rectangles across the frame.
+- **Phillips' slope spectrum is flat to Nyquist.** Shaded water hides that in its normals; iso-lines
+  report it directly and every contour band falls below a pixel. It needs a real short-wave cutoff —
+  the reference's `l = 0.001·L` is 17mm against a 1m grid, i.e. no cutoff at all.
+
+### Things that no longer exist
+
+The contour field's choreography — **formation, scroll submergence, the theme sweep front, and pressure
+ripples** — has no equivalent on the WebGPU path. `reveal.ts` still feeds
+[`scripts/heroscroll.ts`](web/src/scripts/heroscroll.ts) from the hero's ScrollTrigger, and the WebGL2
+fallback still reads it, but the ocean ignores it. If any of that is wanted back it has to be built
+against the ocean, not recovered.
+
+`setHeroScroll` lives in its own module for a reason: `reveal.ts` always loads, and importing it from
+`herofield.ts` dragged the whole WebGL2 fallback (~20KB gzipped) into every visitor's bundle including
+the majority running the ocean. Keep it separate.
 
 ### The hero layout is composed around the field
 
-The light theme's hero field is **light**, so hero type is **dark ink over it** — the reverse of every
-other full-bleed section on the page. These things in [os-site.css](web/src/styles/os-site.css) belong
-to the hero composition, not to the generic component they look like:
+The light theme's hero is **light**, so hero type is **dark ink over it** — the reverse of every other
+full-bleed section on the page. These things in [os-site.css](web/src/styles/os-site.css) belong to the
+hero composition, not to the generic component they look like:
 
 - **`--on-img` / `--on-img-mute` are overridden SCOPED to `.hero` and `.nav.on-hero`, never at `:root`.**
   Those are global tokens, and `.mpanel`, `.principle`, `.device__panel` and the `.io-*` labels all
   still sit on dark photography. Redefining them globally inverts type that is still correct. The dark
-  theme puts both back to the light-on-image values, because the field goes deep there.
+  theme puts both back to the light-on-image values, because the hero goes deep there.
   `--on-img` is near-black (`#12100E`) rather than a soft charcoal, and the mute alphas are high (0.94
-  light / 0.88 dark), because the nav links have to clear AA against bare coral — the darkest thing the
-  field puts under type — with no frost until the page scrolls.
-- **Anything that hardcoded `rgba(246,242,234,…)` now derives from `currentColor`** via `color-mix`:
+  light / 0.88 dark), because the nav links have to clear AA with no frost until the page scrolls.
+- **Anything that hardcoded `rgba(246,242,234,…)` derives from `currentColor`** via `color-mix`:
   `.btn--onimg`, `.nav.on-hero .btn`, `.nav.on-hero .nav-toggle`, `.hero__h1 em`, and the statcard SVG's
   `stroke`/`fill` (now `currentColor`, since `.statcard` already sets `color: var(--on-img)`). A literal
   survives both the theme flip and the contrast probe's colour override, which is exactly how it hides.
   This also gave `.hero__h1 em` the `prefers-contrast` response it never had.
-- **`.nav.on-hero` no longer inverts the logo.** The mark artwork is dark and must stay dark over the
-  light field; `[data-theme="dark"] .os-mark__img` already covers the case where the hero is deep.
-- **`.hero .statcard`'s dark frost is now scoped to the dark theme.** `--frost-fill` is a *light* tint,
-  which over the light coral field is the correct pairing, so the light theme needs no override at all.
-  The dark override and its `@supports not (backdrop-filter)` companion both survive under
+- **`.nav.on-hero` does not invert the logo.** The mark artwork is dark and must stay dark over the
+  light hero; `[data-theme="dark"] .os-mark__img` already covers the case where the hero is deep.
+- **`.hero .statcard`'s dark frost is scoped to the dark theme.** `--frost-fill` is a *light* tint,
+  which over the light coral ground is the correct pairing, so the light theme needs no override at all.
+- **`.hero__veil` is a wedge, not a band**, and it inverts with the theme. A flat full-width gradient is
+  invisible over a still field and is the thing that looks pasted over a moving one, because it is the
+  only part of the frame that never changes. It re-centres at ≤820px where the copy stops being a
+  column — both the light and dark variants.
+- **`.hero :focus-visible`'s halo flips too** — a light ring over the pale ground, the dark ring under
   `[data-theme="dark"]`.
-- **`.hero__veil` is a wedge, not a band**, and it inverts with the theme: a light scrim over the coral
-  field, the original dark one under `[data-theme="dark"]`. A flat full-width gradient is invisible over
-  a still field and is the thing that looks pasted over a moving one, because it is the only part of the
-  frame that never changes. It re-centres at ≤820px where the copy stops being a column — both the light
-  and dark variants.
-- **`.hero :focus-visible`'s halo flips too** — a light ring over the pale field, the dark ring under
-  `[data-theme="dark"]`.
-- **`.hero`'s own background** is the no-WebGL fallback described above, in both themes.
 
-## ⚠ Outstanding before launch — privacy policy
+### Measuring type contrast over the hero
 
-The UK GDPR privacy notice **has now been ported** into the Astro build at
+`test-contrast.mjs` does **not** cover any of this; it only checks token pairs, and it needs no changes
+because every hero override is scoped rather than applied to the global tokens. To measure type against
+the live backdrop: read the type rects and their computed colours, inject CSS making the hero type
+transparent, screenshot several frames, measure each rect's backdrop with `sharp`. Five traps:
+
+1. **Use glyph rects, not element boxes.** A `<p>` spans its column, so its right half is empty space
+   the letters never cover. A `Range` over the contents gives one tight rect per line.
+2. **Read the computed colours *before* injecting the probe CSS**, or they all come back transparent.
+3. **Wait ~900ms after a theme switch before reading colours.** `.btn` and `.nav-link` both transition
+   `color` over 360ms, so an immediate read reports the *outgoing* theme's value.
+4. `.hero__h1 em` and the statcard SVG carry their own colour and survive a naive `color: transparent`.
+   The frost panel and the `.btn` fill must **stay** — text genuinely sits on them.
+5. The backdrop moves, so a single frame is not trustworthy; compare mean against mean.
+
+## ⚠ LIVE WITH PLACEHOLDERS — privacy policy
+
+**This is now shipping.** `main` was merged and deployed with the notice still in draft, so the
+placeholders below are publicly visible at `/privacy` on a live UK GDPR notice. That was a deliberate
+call, not an oversight, but it is the highest-priority outstanding item on the site.
+
+The notice lives in the Astro build at
 [`web/src/pages/privacy.astro`](web/src/pages/privacy.astro) (live at `/privacy`), is **linked from the
 footer** ([web/src/components/Footer.astro](web/src/components/Footer.astro)) and from the Booker panel's
 consent line, and the contact email now reads from `site.ts`. The page is still a **draft** — these
